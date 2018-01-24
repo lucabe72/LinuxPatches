@@ -1,0 +1,82 @@
+From ff883f9b512da23c1117c59463b64ad0445c7ff2 Mon Sep 17 00:00:00 2001
+From: luca abeni <luca.abeni@santannapisa.it>
+Date: Wed, 24 Jan 2018 00:31:18 +0100
+Subject: [PATCH 6/8] Some additional fixed to be squashed
+
+---
+ kernel/sched/deadline.c |  1 +
+ kernel/sched/rt.c       | 25 +++++++++++++------------
+ 2 files changed, 14 insertions(+), 12 deletions(-)
+
+diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
+index 8d8d88cab56e..62e67e2b3816 100644
+--- a/kernel/sched/deadline.c
++++ b/kernel/sched/deadline.c
+@@ -1103,6 +1103,7 @@ static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
+ 		dl_se->dl_throttled = 0;
+ 		if (rt_rq->rt_nr_running) {
+ 			enqueue_dl_entity(dl_se, dl_se, ENQUEUE_REPLENISH);
++			task_contending(dl_se, 0);
+ 
+ 			resched_curr(rq);
+ #ifdef CONFIG_SMP
+diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
+index 3afe8cbeeac6..d2de12b53938 100644
+--- a/kernel/sched/rt.c
++++ b/kernel/sched/rt.c
+@@ -47,18 +47,17 @@ void free_rt_sched_group(struct task_group *tg)
+ 	int i;
+ 
+ 	for_each_possible_cpu(i) {
+-		if (tg->rt_rq)
+-			kfree(tg->rt_rq[i]);
+ 		if (tg->dl_se) {
++			dl_init_tg(tg->dl_se[i], 0, tg->dl_se[i]->dl_period);
+ 			raw_spin_lock_irqsave(&cpu_rq(i)->lock, flags);
+-			if (!tg->dl_se[i]->dl_throttled)
+-				dequeue_dl_entity(tg->dl_se[i]);
+-			task_non_contending(tg->dl_se[i]);
++			BUG_ON(tg->rt_rq[i]->rt_nr_running);
+ 			raw_spin_unlock_irqrestore(&cpu_rq(i)->lock, flags);
+ 
+ 			hrtimer_cancel(&tg->dl_se[i]->dl_timer);
+ 			kfree(tg->dl_se[i]);
+ 		}
++		if (tg->rt_rq)
++			kfree(tg->rt_rq[i]);
+ 	}
+ 
+ 	kfree(tg->rt_rq);
+@@ -373,6 +372,7 @@ static void update_curr_rt(struct rq *rq)
+ 		/* A group exhausts the budget. */
+ 		if (dl_runtime_exceeded(dl_se)) {
+ 			dequeue_dl_entity(dl_se);
++			task_non_contending(dl_se);
+ 
+ 			if (likely(start_dl_timer(dl_se)))
+ 				dl_se->dl_throttled = 1;
+@@ -629,13 +629,14 @@ static void dequeue_task_rt(struct rq *rq, struct task_struct *p, int flags)
+ 	if (is_dl_group(rt_rq) && !rt_rq->rt_nr_running) {
+ 		struct sched_dl_entity *dl_se = dl_group_of(rt_rq);
+ 
+-#ifndef CONFIG_RT_GROUP_SCHED
+-		queue_pull_task(rq);
+-#endif
+-		if (!rt_rq->rt_nr_running) {
+-			dequeue_dl_entity(dl_se);
+-			task_non_contending(dl_se);
+-			resched_curr(rq);
++		if (!dl_se->dl_throttled) {
++			queue_pull_task(rq);
++
++			if (!rt_rq->rt_nr_running) {
++				dequeue_dl_entity(dl_se);
++				task_non_contending(dl_se);
++				resched_curr(rq);
++			}
+ 		}
+ 	}
+ }
+-- 
+2.14.1
+
