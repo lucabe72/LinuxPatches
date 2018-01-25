@@ -1,7 +1,7 @@
 From e371af0cc5b970af1533f48cd3d384dfc8b2d4ca Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Tue, 23 Jan 2018 12:46:06 +0100
-Subject: [PATCH 5/8] Fix stupid bug (and corresponding crash!)
+Subject: [PATCH 5/9] Fix stupid bug (and corresponding crash!)
 
 To be squashed in a previous commit
 ---

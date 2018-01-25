@@ -1,7 +1,7 @@
 From 42863d404f3b2c081c2c339bd4b9a4cd54962098 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Tue, 30 May 2017 11:34:00 +0200
-Subject: [PATCH 2/8] sched/deadline: Hierarchical scheduling with DL on top of
+Subject: [PATCH 2/9] sched/deadline: Hierarchical scheduling with DL on top of
  RT
 
 The runtime of RT tasks controlled by CGroups are enforced by the

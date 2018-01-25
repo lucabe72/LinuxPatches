@@ -1,7 +1,7 @@
 From ff883f9b512da23c1117c59463b64ad0445c7ff2 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Wed, 24 Jan 2018 00:31:18 +0100
-Subject: [PATCH 6/8] Some additional fixed to be squashed
+Subject: [PATCH 6/9] Some additional fixed to be squashed
 
 ---
  kernel/sched/deadline.c |  1 +

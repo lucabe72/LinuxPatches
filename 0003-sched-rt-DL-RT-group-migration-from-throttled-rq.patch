@@ -1,7 +1,7 @@
 From 0c1667aa185858fd8bc9d909b28e76d2c5f81812 Mon Sep 17 00:00:00 2001
 From: Alessio Balsini <a.balsini@sssup.it>
 Date: Fri, 31 Mar 2017 19:44:37 +0200
-Subject: [PATCH 3/8] sched/rt: DL-RT group migration from throttled rq
+Subject: [PATCH 3/9] sched/rt: DL-RT group migration from throttled rq
 
 When the runtime is exhausted in a RT CGroup, the scheduler checks for
 another non-throttled runqueue and, if available, migrates the tasks.

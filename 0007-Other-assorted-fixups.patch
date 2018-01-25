@@ -1,7 +1,7 @@
 From 22fb272cbf05330216657dcab922035e3bc418c8 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Wed, 24 Jan 2018 12:50:07 +0100
-Subject: [PATCH 7/8] Other assorted fixups
+Subject: [PATCH 7/9] Other assorted fixups
 
 Again, to be split / merged in previous patches
 ---

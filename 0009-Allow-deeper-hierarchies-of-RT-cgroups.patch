@@ -1,0 +1,90 @@
+From bb5741e9231b0e6399544a6c9c51f2abd67771c5 Mon Sep 17 00:00:00 2001
+From: luca abeni <luca.abeni@santannapisa.it>
+Date: Thu, 25 Jan 2018 12:22:21 +0100
+Subject: [PATCH 9/9] Allow deeper hierarchies of RT cgroups
+
+The basic rule is that:
+- if a cgroup contains RT tasks than it cannot have other cgroups
+  with RT tasks as children.
+- if a cgroup has children with RT tasks, then it cannot contain RT tasks
+---
+ kernel/sched/core.c | 10 ++++------
+ kernel/sched/rt.c   | 23 ++++++++++++++++++++++-
+ 2 files changed, 26 insertions(+), 7 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 4ea58406ec4a..f8b70c56fb9e 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -4202,6 +4202,10 @@ static int __sched_setscheduler(struct task_struct *p,
+ 
+ 	if (user) {
+ #ifdef CONFIG_RT_GROUP_SCHED
++		if (dl_bandwidth_enabled() && rt_policy(policy) && !sched_rt_can_attach(task_group(p), p)) {
++			task_rq_unlock(rq, p, &rf);
++			return -EPERM;
++		}
+ 		/*
+ 		 * Do not allow realtime tasks into groups that have no runtime
+ 		 * assigned.
+@@ -6356,12 +6360,6 @@ cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
+ 		return &root_task_group.css;
+ 	}
+ 
+-	/* Do not allow cpu_cgroup hierachies with depth greater than 2. */
+-#ifdef CONFIG_RT_GROUP_SCHED
+-	if (parent != &root_task_group)
+-		return ERR_PTR(-EINVAL);
+-#endif
+-
+ 	tg = sched_create_group(parent);
+ 	if (IS_ERR(tg))
+ 		return ERR_PTR(-ENOMEM);
+diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
+index 69c2a83560ab..3c622c9e443c 100644
+--- a/kernel/sched/rt.c
++++ b/kernel/sched/rt.c
+@@ -2036,6 +2036,14 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
+ 	if (tg == &root_task_group && rt_runtime == 0)
+ 		return -EINVAL;
+ 
++	/*
++	 * Do not allow to set a RT runtime > 0 if the parent has RT tasks
++	 * (and is not the root group)
++	 */
++	if (rt_runtime && (tg != &root_task_group) && (tg->parent != &root_task_group) && tg_has_rt_tasks(tg->parent)) {
++		return -EINVAL;
++	}
++
+ 	/* No period doesn't make any sense. */
+ 	if (rt_period == 0)
+ 		return -EINVAL;
+@@ -2123,11 +2131,24 @@ static int sched_rt_global_constraints(void)
+ 
+ int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk)
+ {
++	int can_attach = 1;
++
+ 	/* Don't accept realtime tasks when there is no way for them to run */
+ 	if (rt_task(tsk) && tg->dl_bandwidth.dl_runtime == 0)
+ 		return 0;
+ 
+-	return 1;
++	/* If one of the children has runtime > 0, cannot attach RT tasks! */
++	if ((tg != &root_task_group) && rt_task(tsk)) {
++		struct task_group *child;
++
++		list_for_each_entry_rcu(child, &tg->children, siblings) {
++			if (child->dl_bandwidth.dl_runtime) {
++				can_attach = 0;
++			}
++		}
++	}
++
++	return can_attach;
+ }
+ 
+ #else /* !CONFIG_RT_GROUP_SCHED */
+-- 
+2.14.1
+

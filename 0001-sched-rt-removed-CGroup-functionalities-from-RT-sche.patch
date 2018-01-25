@@ -1,7 +1,7 @@
 From e757e2a8ea30f6c10d87125d632a23382e79423c Mon Sep 17 00:00:00 2001
 From: Alessio Balsini <a.balsini@sssup.it>
 Date: Fri, 31 Mar 2017 18:53:18 +0200
-Subject: [PATCH 1/8] sched/rt: removed CGroup functionalities from RT
+Subject: [PATCH 1/9] sched/rt: removed CGroup functionalities from RT
  scheduling class
 
 To implement a new throttling policy for RT cgroups, the already existing
