@@ -1,0 +1,667 @@
+From 6809fba6cd7b14a045e71d62d50a587a5325c80c Mon Sep 17 00:00:00 2001
+From: Luca Abeni <lucabe72@gmail.com>
+Date: Sat, 5 Aug 2017 23:19:48 +0200
+Subject: [PATCH 1/2] sched/deadline: Partitioned admission control
+
+This commit allows to switch to SCHED_DEADLINE only tasks with affinity
+to one single CPU. This basically means that we move from gEDF to partitioned
+EDF. As a consequence, change the admission test.
+
+Some details still need to be fixed:
+- Implement Umax < 1
+- Decrease the runqueue utilization at the correct time (might need to
+  check how hrtimers affinity works)
+- More testing and cleanup
+
+The push/pull logic is still in place (but is not used anymore) and will
+be removed in the next commit
+---
+ include/linux/sched.h   |   1 -
+ kernel/cgroup/cpuset.c  |  10 ---
+ kernel/sched/core.c     |  35 ++-------
+ kernel/sched/deadline.c | 185 +++++++++---------------------------------------
+ kernel/sched/debug.c    |  11 +--
+ kernel/sched/sched.h    |  70 ++----------------
+ kernel/sched/topology.c |   1 -
+ 7 files changed, 52 insertions(+), 261 deletions(-)
+
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 8337e2db0bb2..8c96518fc94f 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -1351,7 +1351,6 @@ current_restore_flags(unsigned long orig_flags, unsigned long flags)
+ 	current->flags |= orig_flags & flags;
+ }
+ 
+-extern int cpuset_cpumask_can_shrink(const struct cpumask *cur, const struct cpumask *trial);
+ extern int task_can_attach(struct task_struct *p, const struct cpumask *cs_cpus_allowed);
+ #ifdef CONFIG_SMP
+ extern void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask);
+diff --git a/kernel/cgroup/cpuset.c b/kernel/cgroup/cpuset.c
+index ca8376e5008c..f5cad3d173fc 100644
+--- a/kernel/cgroup/cpuset.c
++++ b/kernel/cgroup/cpuset.c
+@@ -522,16 +522,6 @@ static int validate_change(struct cpuset *cur, struct cpuset *trial)
+ 			goto out;
+ 	}
+ 
+-	/*
+-	 * We can't shrink if we won't have enough room for SCHED_DEADLINE
+-	 * tasks.
+-	 */
+-	ret = -EBUSY;
+-	if (is_cpu_exclusive(cur) &&
+-	    !cpuset_cpumask_can_shrink(cur->cpus_allowed,
+-				       trial->cpus_allowed))
+-		goto out;
+-
+ 	ret = 0;
+ out:
+ 	rcu_read_unlock();
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index e9785f7aed75..a8a8153123d5 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -4123,15 +4123,11 @@ static int __sched_setscheduler(struct task_struct *p,
+ #endif
+ #ifdef CONFIG_SMP
+ 		if (dl_bandwidth_enabled() && dl_policy(policy)) {
+-			cpumask_t *span = rq->rd->span;
+-
+ 			/*
+-			 * Don't allow tasks with an affinity mask smaller than
+-			 * the entire root_domain to become SCHED_DEADLINE. We
+-			 * will also fail if there's no bandwidth available.
++			 * Don't allow tasks with an affinity mask with
++			 * cardinality > 1 to become SCHED_DEADLINE.
+ 			 */
+-			if (!cpumask_subset(span, &p->cpus_allowed) ||
+-			    rq->rd->dl_bw.bw == 0) {
++			if (cpumask_weight(&p->cpus_allowed) != 1) {
+ 				task_rq_unlock(rq, p, &rf);
+ 				return -EPERM;
+ 			}
+@@ -4630,21 +4626,12 @@ long sched_setaffinity(pid_t pid, const struct cpumask *in_mask)
+ 	cpuset_cpus_allowed(p, cpus_allowed);
+ 	cpumask_and(new_mask, in_mask, cpus_allowed);
+ 
+-	/*
+-	 * Since bandwidth control happens on root_domain basis,
+-	 * if admission test is enabled, we only admit -deadline
+-	 * tasks allowed to run on all the CPUs in the task's
+-	 * root_domain.
+-	 */
+ #ifdef CONFIG_SMP
+ 	if (task_has_dl_policy(p) && dl_bandwidth_enabled()) {
+-		rcu_read_lock();
+-		if (!cpumask_subset(task_rq(p)->rd->span, new_mask)) {
++		if ((cpumask_weight(new_mask) != 1) || dl_task_can_attach(p, new_mask)) {
+ 			retval = -EBUSY;
+-			rcu_read_unlock();
+ 			goto out_free_new_mask;
+ 		}
+-		rcu_read_unlock();
+ 	}
+ #endif
+ again:
+@@ -5254,19 +5241,6 @@ void init_idle(struct task_struct *idle, int cpu)
+ 
+ #ifdef CONFIG_SMP
+ 
+-int cpuset_cpumask_can_shrink(const struct cpumask *cur,
+-			      const struct cpumask *trial)
+-{
+-	int ret = 1;
+-
+-	if (!cpumask_weight(cur))
+-		return ret;
+-
+-	ret = dl_cpuset_cpumask_can_shrink(cur, trial);
+-
+-	return ret;
+-}
+-
+ int task_can_attach(struct task_struct *p,
+ 		    const struct cpumask *cs_cpus_allowed)
+ {
+@@ -5797,7 +5771,6 @@ void __init sched_init(void)
+ #endif /* CONFIG_CPUMASK_OFFSTACK */
+ 
+ 	init_rt_bandwidth(&def_rt_bandwidth, global_rt_period(), global_rt_runtime());
+-	init_dl_bandwidth(&def_dl_bandwidth, global_rt_period(), global_rt_runtime());
+ 
+ #ifdef CONFIG_SMP
+ 	init_defrootdomain();
+diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
+index 755bd3f1a1a9..f0225b133e84 100644
+--- a/kernel/sched/deadline.c
++++ b/kernel/sched/deadline.c
+@@ -44,38 +44,6 @@ static inline int on_dl_rq(struct sched_dl_entity *dl_se)
+ 	return !RB_EMPTY_NODE(&dl_se->rb_node);
+ }
+ 
+-#ifdef CONFIG_SMP
+-static inline struct dl_bw *dl_bw_of(int i)
+-{
+-	RCU_LOCKDEP_WARN(!rcu_read_lock_sched_held(),
+-			 "sched RCU must be held");
+-	return &cpu_rq(i)->rd->dl_bw;
+-}
+-
+-static inline int dl_bw_cpus(int i)
+-{
+-	struct root_domain *rd = cpu_rq(i)->rd;
+-	int cpus = 0;
+-
+-	RCU_LOCKDEP_WARN(!rcu_read_lock_sched_held(),
+-			 "sched RCU must be held");
+-	for_each_cpu_and(i, rd->span, cpu_active_mask)
+-		cpus++;
+-
+-	return cpus;
+-}
+-#else
+-static inline struct dl_bw *dl_bw_of(int i)
+-{
+-	return &cpu_rq(i)->dl.dl_bw;
+-}
+-
+-static inline int dl_bw_cpus(int i)
+-{
+-	return 1;
+-}
+-#endif
+-
+ static inline
+ void add_running_bw(u64 dl_bw, struct dl_rq *dl_rq)
+ {
+@@ -237,14 +205,8 @@ static void task_non_contending(struct task_struct *p)
+ 		if (dl_task(p))
+ 			sub_running_bw(dl_se->dl_bw, dl_rq);
+ 		if (!dl_task(p) || p->state == TASK_DEAD) {
+-			struct dl_bw *dl_b = dl_bw_of(task_cpu(p));
+-
+ 			if (p->state == TASK_DEAD)
+ 				sub_rq_bw(p->dl.dl_bw, &rq->dl);
+-			raw_spin_lock(&dl_b->lock);
+-			__dl_clear(dl_b, p->dl.dl_bw, dl_bw_cpus(task_cpu(p)));
+-			__dl_clear_params(p);
+-			raw_spin_unlock(&dl_b->lock);
+ 		}
+ 
+ 		return;
+@@ -299,25 +261,6 @@ static inline int is_leftmost(struct task_struct *p, struct dl_rq *dl_rq)
+ 	return dl_rq->rb_leftmost == &dl_se->rb_node;
+ }
+ 
+-void init_dl_bandwidth(struct dl_bandwidth *dl_b, u64 period, u64 runtime)
+-{
+-	raw_spin_lock_init(&dl_b->dl_runtime_lock);
+-	dl_b->dl_period = period;
+-	dl_b->dl_runtime = runtime;
+-}
+-
+-void init_dl_bw(struct dl_bw *dl_b)
+-{
+-	raw_spin_lock_init(&dl_b->lock);
+-	raw_spin_lock(&def_dl_bandwidth.dl_runtime_lock);
+-	if (global_rt_runtime() == RUNTIME_INF)
+-		dl_b->bw = -1;
+-	else
+-		dl_b->bw = to_ratio(global_rt_period(), global_rt_runtime());
+-	raw_spin_unlock(&def_dl_bandwidth.dl_runtime_lock);
+-	dl_b->total_bw = 0;
+-}
+-
+ void init_dl_rq(struct dl_rq *dl_rq)
+ {
+ 	dl_rq->rb_root = RB_ROOT;
+@@ -329,8 +272,6 @@ void init_dl_rq(struct dl_rq *dl_rq)
+ 	dl_rq->dl_nr_migratory = 0;
+ 	dl_rq->overloaded = 0;
+ 	dl_rq->pushable_dl_tasks_root = RB_ROOT;
+-#else
+-	init_dl_bw(&dl_rq->dl_bw);
+ #endif
+ 
+ 	dl_rq->running_bw = 0;
+@@ -1202,17 +1143,12 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
+ 	rq = task_rq_lock(p, &rf);
+ 
+ 	if (!dl_task(p) || p->state == TASK_DEAD) {
+-		struct dl_bw *dl_b = dl_bw_of(task_cpu(p));
+-
+ 		if (p->state == TASK_DEAD && dl_se->dl_non_contending) {
+ 			sub_running_bw(p->dl.dl_bw, dl_rq_of_se(&p->dl));
+ 			sub_rq_bw(p->dl.dl_bw, dl_rq_of_se(&p->dl));
+ 			dl_se->dl_non_contending = 0;
+ 		}
+ 
+-		raw_spin_lock(&dl_b->lock);
+-		__dl_clear(dl_b, p->dl.dl_bw, dl_bw_cpus(task_cpu(p)));
+-		raw_spin_unlock(&dl_b->lock);
+ 		__dl_clear_params(p);
+ 
+ 		goto unlock;
+@@ -1422,11 +1358,12 @@ static void enqueue_task_dl(struct rq *rq, struct task_struct *p, int flags)
+ 	if (!p->dl.dl_throttled && !dl_is_implicit(&p->dl))
+ 		dl_check_constrained_dl(&p->dl);
+ 
+-	if (p->on_rq == TASK_ON_RQ_MIGRATING || flags & ENQUEUE_RESTORE) {
+-		add_rq_bw(p->dl.dl_bw, &rq->dl);
++	if (p->on_rq == TASK_ON_RQ_MIGRATING)
+ 		add_running_bw(p->dl.dl_bw, &rq->dl);
+-	}
+ 
++	if (flags & ENQUEUE_RESTORE && cpumask_test_cpu(rq->cpu, &p->cpus_allowed)) {
++		add_running_bw(p->dl.dl_bw, &rq->dl);
++	}
+ 	/*
+ 	 * If p is throttled, we do not enqueue it. In fact, if it exhausted
+ 	 * its budget it needs a replenishment and, since it now is on
+@@ -1463,10 +1400,17 @@ static void dequeue_task_dl(struct rq *rq, struct task_struct *p, int flags)
+ 	update_curr_dl(rq);
+ 	__dequeue_task_dl(rq, p, flags);
+ 
++#if 0
+ 	if (p->on_rq == TASK_ON_RQ_MIGRATING || flags & DEQUEUE_SAVE) {
+ 		sub_running_bw(p->dl.dl_bw, &rq->dl);
+ 		sub_rq_bw(p->dl.dl_bw, &rq->dl);
+ 	}
++#else
++	if (flags & DEQUEUE_SAVE && cpumask_test_cpu(rq->cpu, &p->cpus_allowed)) {
++		sub_running_bw(p->dl.dl_bw, &rq->dl);
++		sub_rq_bw(p->dl.dl_bw, &rq->dl);
++	}
++#endif
+ 
+ 	/*
+ 	 * This check allows to start the inactive timer (or to immediately
+@@ -2154,33 +2098,8 @@ static void task_woken_dl(struct rq *rq, struct task_struct *p)
+ static void set_cpus_allowed_dl(struct task_struct *p,
+ 				const struct cpumask *new_mask)
+ {
+-	struct root_domain *src_rd;
+-	struct rq *rq;
+-
+ 	BUG_ON(!dl_task(p));
+ 
+-	rq = task_rq(p);
+-	src_rd = rq->rd;
+-	/*
+-	 * Migrating a SCHED_DEADLINE task between exclusive
+-	 * cpusets (different root_domains) entails a bandwidth
+-	 * update. We already made space for us in the destination
+-	 * domain (see cpuset_can_attach()).
+-	 */
+-	if (!cpumask_intersects(src_rd->span, new_mask)) {
+-		struct dl_bw *src_dl_b;
+-
+-		src_dl_b = dl_bw_of(cpu_of(rq));
+-		/*
+-		 * We now free resources of the root_domain we are migrating
+-		 * off. In the worst case, sched_setattr() may temporary fail
+-		 * until we complete the update.
+-		 */
+-		raw_spin_lock(&src_dl_b->lock);
+-		__dl_clear(src_dl_b, p->dl.dl_bw, dl_bw_cpus(task_cpu(p)));
+-		raw_spin_unlock(&src_dl_b->lock);
+-	}
+-
+ 	set_cpus_allowed_common(p, new_mask);
+ }
+ 
+@@ -2262,7 +2181,7 @@ static void switched_to_dl(struct rq *rq, struct task_struct *p)
+ 
+ 	/* If p is not queued we will update its parameters at next wakeup. */
+ 	if (!task_on_rq_queued(p)) {
+-		add_rq_bw(p->dl.dl_bw, &rq->dl);
++		//add_rq_bw(p->dl.dl_bw, &rq->dl);
+ 
+ 		return;
+ 	}
+@@ -2358,9 +2277,7 @@ int sched_dl_global_validate(void)
+ 	u64 runtime = global_rt_runtime();
+ 	u64 period = global_rt_period();
+ 	u64 new_bw = to_ratio(period, runtime);
+-	struct dl_bw *dl_b;
+ 	int cpu, ret = 0;
+-	unsigned long flags;
+ 
+ 	/*
+ 	 * Here we want to check the bandwidth not being set to some
+@@ -2373,12 +2290,9 @@ int sched_dl_global_validate(void)
+ 	 */
+ 	for_each_possible_cpu(cpu) {
+ 		rcu_read_lock_sched();
+-		dl_b = dl_bw_of(cpu);
+ 
+-		raw_spin_lock_irqsave(&dl_b->lock, flags);
+-		if (new_bw < dl_b->total_bw)
++		if (new_bw < cpu_rq(cpu)->dl.this_bw)
+ 			ret = -EBUSY;
+-		raw_spin_unlock_irqrestore(&dl_b->lock, flags);
+ 
+ 		rcu_read_unlock_sched();
+ 
+@@ -2405,9 +2319,7 @@ void init_dl_rq_bw_ratio(struct dl_rq *dl_rq)
+ void sched_dl_do_global(void)
+ {
+ 	u64 new_bw = -1;
+-	struct dl_bw *dl_b;
+ 	int cpu;
+-	unsigned long flags;
+ 
+ 	def_dl_bandwidth.dl_period = global_rt_period();
+ 	def_dl_bandwidth.dl_runtime = global_rt_runtime();
+@@ -2420,11 +2332,8 @@ void sched_dl_do_global(void)
+ 	 */
+ 	for_each_possible_cpu(cpu) {
+ 		rcu_read_lock_sched();
+-		dl_b = dl_bw_of(cpu);
+ 
+-		raw_spin_lock_irqsave(&dl_b->lock, flags);
+-		dl_b->bw = new_bw;
+-		raw_spin_unlock_irqrestore(&dl_b->lock, flags);
++		/* FIXME: Do something cool, here */
+ 
+ 		rcu_read_unlock_sched();
+ 		init_dl_rq_bw_ratio(&cpu_rq(cpu)->dl);
+@@ -2442,11 +2351,10 @@ void sched_dl_do_global(void)
+ int sched_dl_overflow(struct task_struct *p, int policy,
+ 		      const struct sched_attr *attr)
+ {
+-	struct dl_bw *dl_b = dl_bw_of(task_cpu(p));
+ 	u64 period = attr->sched_period ?: attr->sched_deadline;
+ 	u64 runtime = attr->sched_runtime;
+ 	u64 new_bw = dl_policy(policy) ? to_ratio(period, runtime) : 0;
+-	int cpus, err = -1;
++	int err = -1;
+ 
+ 	/* !deadline task may carry old deadline bandwidth */
+ 	if (new_bw == p->dl.dl_bw && task_has_dl_policy(p))
+@@ -2457,16 +2365,16 @@ int sched_dl_overflow(struct task_struct *p, int policy,
+ 	 * its parameters, we may need to update accordingly the total
+ 	 * allocated bandwidth of the container.
+ 	 */
+-	raw_spin_lock(&dl_b->lock);
+-	cpus = dl_bw_cpus(task_cpu(p));
+ 	if (dl_policy(policy) && !task_has_dl_policy(p) &&
+-	    !__dl_overflow(dl_b, cpus, 0, new_bw)) {
++	    !__dl_overflow(task_rq(p), new_bw)) {
++/*
+ 		if (hrtimer_active(&p->dl.inactive_timer))
+ 			__dl_clear(dl_b, p->dl.dl_bw, cpus);
+-		__dl_add(dl_b, new_bw, cpus);
++* FIXME! */
++		add_rq_bw(new_bw, &task_rq(p)->dl);
+ 		err = 0;
+ 	} else if (dl_policy(policy) && task_has_dl_policy(p) &&
+-		   !__dl_overflow(dl_b, cpus, p->dl.dl_bw, new_bw)) {
++		   !__dl_overflow(task_rq(p), new_bw)) {
+ 		/*
+ 		 * XXX this is slightly incorrect: when the task
+ 		 * utilization decreases, we should delay the total
+@@ -2474,8 +2382,10 @@ int sched_dl_overflow(struct task_struct *p, int policy,
+ 		 * But this would require to set the task's "inactive
+ 		 * timer" when the task is not inactive.
+ 		 */
++/*
+ 		__dl_clear(dl_b, p->dl.dl_bw, cpus);
+ 		__dl_add(dl_b, new_bw, cpus);
++ FIXME: What to do with this??? */
+ 		dl_change_utilization(p, new_bw);
+ 		err = 0;
+ 	} else if (!dl_policy(policy) && task_has_dl_policy(p)) {
+@@ -2486,7 +2396,6 @@ int sched_dl_overflow(struct task_struct *p, int policy,
+ 		 */
+ 		err = 0;
+ 	}
+-	raw_spin_unlock(&dl_b->lock);
+ 
+ 	return err;
+ }
+@@ -2599,16 +2508,17 @@ int dl_task_can_attach(struct task_struct *p, const struct cpumask *cs_cpus_allo
+ {
+ 	unsigned int dest_cpu = cpumask_any_and(cpu_active_mask,
+ 							cs_cpus_allowed);
+-	struct dl_bw *dl_b;
+-	bool overflow;
+-	int cpus, ret;
++	struct rq_flags rf;
+ 	unsigned long flags;
++	struct rq *dest_rq = cpu_rq(dest_cpu);
++
++	bool overflow;
++	int ret;
+ 
+ 	rcu_read_lock_sched();
+-	dl_b = dl_bw_of(dest_cpu);
+-	raw_spin_lock_irqsave(&dl_b->lock, flags);
+-	cpus = dl_bw_cpus(dest_cpu);
+-	overflow = __dl_overflow(dl_b, cpus, 0, p->dl.dl_bw);
++	local_irq_save(flags);
++	rq_lock(dest_rq, &rf);
++	overflow = __dl_overflow(dest_rq, p->dl.dl_bw);
+ 	if (overflow)
+ 		ret = -EBUSY;
+ 	else {
+@@ -2618,47 +2528,22 @@ int dl_task_can_attach(struct task_struct *p, const struct cpumask *cs_cpus_allo
+ 		 * We will free resources in the source root_domain
+ 		 * later on (see set_cpus_allowed_dl()).
+ 		 */
+-		__dl_add(dl_b, p->dl.dl_bw, cpus);
++		if (dest_cpu != task_cpu(p))
++			add_rq_bw(p->dl.dl_bw, &dest_rq->dl);
+ 		ret = 0;
+ 	}
+-	raw_spin_unlock_irqrestore(&dl_b->lock, flags);
+-	rcu_read_unlock_sched();
+-	return ret;
+-}
+-
+-int dl_cpuset_cpumask_can_shrink(const struct cpumask *cur,
+-				 const struct cpumask *trial)
+-{
+-	int ret = 1, trial_cpus;
+-	struct dl_bw *cur_dl_b;
+-	unsigned long flags;
+-
+-	rcu_read_lock_sched();
+-	cur_dl_b = dl_bw_of(cpumask_any(cur));
+-	trial_cpus = cpumask_weight(trial);
+-
+-	raw_spin_lock_irqsave(&cur_dl_b->lock, flags);
+-	if (cur_dl_b->bw != -1 &&
+-	    cur_dl_b->bw * trial_cpus < cur_dl_b->total_bw)
+-		ret = 0;
+-	raw_spin_unlock_irqrestore(&cur_dl_b->lock, flags);
++	rq_unlock(dest_rq, &rf);
++	local_irq_restore(flags);
+ 	rcu_read_unlock_sched();
+ 	return ret;
+ }
+ 
+ bool dl_cpu_busy(unsigned int cpu)
+ {
+-	unsigned long flags;
+-	struct dl_bw *dl_b;
+ 	bool overflow;
+-	int cpus;
+ 
+ 	rcu_read_lock_sched();
+-	dl_b = dl_bw_of(cpu);
+-	raw_spin_lock_irqsave(&dl_b->lock, flags);
+-	cpus = dl_bw_cpus(cpu);
+-	overflow = __dl_overflow(dl_b, cpus, 0, 0);
+-	raw_spin_unlock_irqrestore(&dl_b->lock, flags);
++	overflow = (cpu_rq(cpu)->dl.this_bw > 0);
+ 	rcu_read_unlock_sched();
+ 	return overflow;
+ }
+diff --git a/kernel/sched/debug.c b/kernel/sched/debug.c
+index 4fa66de52bd6..99e76d5439c4 100644
+--- a/kernel/sched/debug.c
++++ b/kernel/sched/debug.c
+@@ -572,7 +572,7 @@ void print_rt_rq(struct seq_file *m, int cpu, struct rt_rq *rt_rq)
+ 
+ void print_dl_rq(struct seq_file *m, int cpu, struct dl_rq *dl_rq)
+ {
+-	struct dl_bw *dl_bw;
++	//struct dl_bw *dl_bw;
+ 
+ 	SEQ_printf(m, "\ndl_rq[%d]:\n", cpu);
+ 
+@@ -582,12 +582,13 @@ void print_dl_rq(struct seq_file *m, int cpu, struct dl_rq *dl_rq)
+ 	PU(dl_nr_running);
+ #ifdef CONFIG_SMP
+ 	PU(dl_nr_migratory);
+-	dl_bw = &cpu_rq(cpu)->rd->dl_bw;
++	//dl_bw = &cpu_rq(cpu)->rd->dl_bw;
+ #else
+-	dl_bw = &dl_rq->dl_bw;
++	//dl_bw = &dl_rq->dl_bw;
+ #endif
+-	SEQ_printf(m, "  .%-30s: %lld\n", "dl_bw->bw", dl_bw->bw);
+-	SEQ_printf(m, "  .%-30s: %lld\n", "dl_bw->total_bw", dl_bw->total_bw);
++//FIXME!!!
++	//SEQ_printf(m, "  .%-30s: %lld\n", "dl_bw->bw", dl_bw->bw);
++	//SEQ_printf(m, "  .%-30s: %lld\n", "dl_bw->total_bw", dl_bw->total_bw);
+ 
+ #undef PU
+ }
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+index b2f9c9f7c0ee..3c27e73e468f 100644
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -218,36 +218,6 @@ static inline int dl_bandwidth_enabled(void)
+ 	return sysctl_sched_rt_runtime >= 0;
+ }
+ 
+-struct dl_bw {
+-	raw_spinlock_t lock;
+-	u64 bw, total_bw;
+-};
+-
+-static inline void __dl_update(struct dl_bw *dl_b, s64 bw);
+-
+-static inline
+-void __dl_clear(struct dl_bw *dl_b, u64 tsk_bw, int cpus)
+-{
+-	dl_b->total_bw -= tsk_bw;
+-	__dl_update(dl_b, (s32)tsk_bw / cpus);
+-}
+-
+-static inline
+-void __dl_add(struct dl_bw *dl_b, u64 tsk_bw, int cpus)
+-{
+-	dl_b->total_bw += tsk_bw;
+-	__dl_update(dl_b, -((s32)tsk_bw / cpus));
+-}
+-
+-static inline
+-bool __dl_overflow(struct dl_bw *dl_b, int cpus, u64 old_bw, u64 new_bw)
+-{
+-	return dl_b->bw != -1 &&
+-	       dl_b->bw * cpus < dl_b->total_bw - old_bw + new_bw;
+-}
+-
+-void dl_change_utilization(struct task_struct *p, u64 new_bw);
+-extern void init_dl_bw(struct dl_bw *dl_b);
+ extern int sched_dl_global_validate(void);
+ extern void sched_dl_do_global(void);
+ extern int sched_dl_overflow(struct task_struct *p, int policy,
+@@ -259,8 +229,6 @@ extern void __dl_clear_params(struct task_struct *p);
+ extern bool dl_param_changed(struct task_struct *p, const struct sched_attr *attr);
+ extern int dl_task_can_attach(struct task_struct *p,
+ 			      const struct cpumask *cs_cpus_allowed);
+-extern int dl_cpuset_cpumask_can_shrink(const struct cpumask *cur,
+-					const struct cpumask *trial);
+ extern bool dl_cpu_busy(unsigned int cpu);
+ 
+ #ifdef CONFIG_CGROUP_SCHED
+@@ -577,8 +545,6 @@ struct dl_rq {
+ 	 */
+ 	struct rb_root pushable_dl_tasks_root;
+ 	struct rb_node *pushable_dl_tasks_leftmost;
+-#else
+-	struct dl_bw dl_bw;
+ #endif
+ 	/*
+ 	 * "Active utilization" for this runqueue: increased when a
+@@ -637,7 +603,6 @@ struct root_domain {
+ 	 */
+ 	cpumask_var_t dlo_mask;
+ 	atomic_t dlo_count;
+-	struct dl_bw dl_bw;
+ 	struct cpudl cpudl;
+ 
+ 	/*
+@@ -1535,11 +1500,17 @@ extern struct rt_bandwidth def_rt_bandwidth;
+ extern void init_rt_bandwidth(struct rt_bandwidth *rt_b, u64 period, u64 runtime);
+ 
+ extern struct dl_bandwidth def_dl_bandwidth;
+-extern void init_dl_bandwidth(struct dl_bandwidth *dl_b, u64 period, u64 runtime);
+ extern void init_dl_task_timer(struct sched_dl_entity *dl_se);
+ extern void init_dl_inactive_task_timer(struct sched_dl_entity *dl_se);
+ extern void init_dl_rq_bw_ratio(struct dl_rq *dl_rq);
+ 
++static inline
++bool __dl_overflow(struct rq *rq, u64 new_bw)
++{
++	/* FIXME: Use def_dl_bandwidth */
++	return rq->dl.this_bw + new_bw > 1 << 20; 
++}
++
+ #define BW_SHIFT	20
+ #define BW_UNIT		(1 << BW_SHIFT)
+ #define RATIO_SHIFT	8
+@@ -1984,33 +1955,6 @@ extern void nohz_balance_exit_idle(unsigned int cpu);
+ static inline void nohz_balance_exit_idle(unsigned int cpu) { }
+ #endif
+ 
+-
+-#ifdef CONFIG_SMP
+-static inline
+-void __dl_update(struct dl_bw *dl_b, s64 bw)
+-{
+-	struct root_domain *rd = container_of(dl_b, struct root_domain, dl_bw);
+-	int i;
+-
+-	RCU_LOCKDEP_WARN(!rcu_read_lock_sched_held(),
+-			 "sched RCU must be held");
+-	for_each_cpu_and(i, rd->span, cpu_active_mask) {
+-		struct rq *rq = cpu_rq(i);
+-
+-		rq->dl.extra_bw += bw;
+-	}
+-}
+-#else
+-static inline
+-void __dl_update(struct dl_bw *dl_b, s64 bw)
+-{
+-	struct dl_rq *dl = container_of(dl_b, struct dl_rq, dl_bw);
+-
+-	dl->extra_bw += bw;
+-}
+-#endif
+-
+-
+ #ifdef CONFIG_IRQ_TIME_ACCOUNTING
+ struct irqtime {
+ 	u64			total;
+diff --git a/kernel/sched/topology.c b/kernel/sched/topology.c
+index 79895aec281e..db8afd7930f1 100644
+--- a/kernel/sched/topology.c
++++ b/kernel/sched/topology.c
+@@ -272,7 +272,6 @@ static int init_rootdomain(struct root_domain *rd)
+ 	if (!zalloc_cpumask_var(&rd->rto_mask, GFP_KERNEL))
+ 		goto free_dlo_mask;
+ 
+-	init_dl_bw(&rd->dl_bw);
+ 	if (cpudl_init(&rd->cpudl) != 0)
+ 		goto free_rto_mask;
+ 
+-- 
+2.11.0
+
