@@ -1,7 +1,7 @@
-From bb5741e9231b0e6399544a6c9c51f2abd67771c5 Mon Sep 17 00:00:00 2001
+From ed4ddd183755658a766a43db9251c7f4ccc93ba0 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Thu, 25 Jan 2018 12:22:21 +0100
-Subject: [PATCH 9/9] Allow deeper hierarchies of RT cgroups
+Subject: [PATCH 09/10] Allow deeper hierarchies of RT cgroups
 
 The basic rule is that:
 - if a cgroup contains RT tasks than it cannot have other cgroups
@@ -13,10 +13,10 @@ The basic rule is that:
  2 files changed, 26 insertions(+), 7 deletions(-)
 
 diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index 4ea58406ec4a..f8b70c56fb9e 100644
+index 1a4fe6533527..4f49b9a26302 100644
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/core.c
-@@ -4202,6 +4202,10 @@ static int __sched_setscheduler(struct task_struct *p,
+@@ -4221,6 +4221,10 @@ static int __sched_setscheduler(struct task_struct *p,
  
  	if (user) {
  #ifdef CONFIG_RT_GROUP_SCHED
@@ -27,7 +27,7 @@ index 4ea58406ec4a..f8b70c56fb9e 100644
  		/*
  		 * Do not allow realtime tasks into groups that have no runtime
  		 * assigned.
-@@ -6356,12 +6360,6 @@ cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
+@@ -6375,12 +6379,6 @@ cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
  		return &root_task_group.css;
  	}
  
@@ -41,10 +41,10 @@ index 4ea58406ec4a..f8b70c56fb9e 100644
  	if (IS_ERR(tg))
  		return ERR_PTR(-ENOMEM);
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 69c2a83560ab..3c622c9e443c 100644
+index 4a3064313c28..378db2e2b6a8 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
-@@ -2036,6 +2036,14 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
+@@ -2044,6 +2044,14 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
  	if (tg == &root_task_group && rt_runtime == 0)
  		return -EINVAL;
  
@@ -59,7 +59,7 @@ index 69c2a83560ab..3c622c9e443c 100644
  	/* No period doesn't make any sense. */
  	if (rt_period == 0)
  		return -EINVAL;
-@@ -2123,11 +2131,24 @@ static int sched_rt_global_constraints(void)
+@@ -2131,11 +2139,24 @@ static int sched_rt_global_constraints(void)
  
  int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk)
  {

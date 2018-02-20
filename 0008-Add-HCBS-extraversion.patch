@@ -1,22 +1,22 @@
-From a6eb60e18008aa928d97017bedc6a36d694b40b9 Mon Sep 17 00:00:00 2001
+From 52c170e7eb9119ad5dd808d6d4eef9cf3c20f5f8 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Tue, 16 Jan 2018 11:42:28 +0100
-Subject: [PATCH 8/9] Add HCBS extraversion
+Subject: [PATCH 08/10] Add HCBS extraversion
 
 ---
  Makefile | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/Makefile b/Makefile
-index 339397b838d3..8e5b670695d0 100644
+index 79ad2bfa24b6..ff429b2c3887 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -2,7 +2,7 @@
  VERSION = 4
- PATCHLEVEL = 15
+ PATCHLEVEL = 16
  SUBLEVEL = 0
--EXTRAVERSION = -rc9
-+EXTRAVERSION = -rc9-HCBS
+-EXTRAVERSION = -rc1
++EXTRAVERSION = -rc1-HCBS
  NAME = Fearless Coyote
  
  # *DOCUMENTATION*
