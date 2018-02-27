@@ -1,4 +1,4 @@
-From 162ba958007ed0c274e295084def2802890868cc Mon Sep 17 00:00:00 2001
+From 1dbabb39b93d9d54f7c31a965c93c8078d460cc0 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Wed, 24 Jan 2018 12:50:07 +0100
 Subject: [PATCH 07/10] Other assorted fixups
@@ -10,7 +10,7 @@ Again, to be split / merged in previous patches
  2 files changed, 20 insertions(+), 10 deletions(-)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index 090309921acc..95f8792e8cb1 100644
+index 24a6f22809c2..0d7f915c3ccb 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
 @@ -196,22 +196,26 @@ int dl_check_tg(unsigned long total)
@@ -49,10 +49,10 @@ index 090309921acc..95f8792e8cb1 100644
  	raw_spin_unlock_irq(&rq->lock);
  
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index d59904b0e004..4a3064313c28 100644
+index 05d6d4d10e21..4b3403cb3a5d 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
-@@ -2018,6 +2018,13 @@ static int __rt_schedulable(struct task_group *tg, u64 period, u64 runtime)
+@@ -2017,6 +2017,13 @@ static int __rt_schedulable(struct task_group *tg, u64 period, u64 runtime)
  		.rt_runtime = runtime,
  	};
  
@@ -66,7 +66,7 @@ index d59904b0e004..4a3064313c28 100644
  	rcu_read_lock();
  	ret = walk_tg_tree(tg_rt_schedulable, tg_nop, &data);
  	rcu_read_unlock();
-@@ -2055,8 +2062,7 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
+@@ -2054,8 +2061,7 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
  		goto unlock_bandwidth;
  
  	for_each_possible_cpu(i) {

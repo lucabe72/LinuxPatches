@@ -1,4 +1,4 @@
-From ed4ddd183755658a766a43db9251c7f4ccc93ba0 Mon Sep 17 00:00:00 2001
+From 3138b26f34b19b37e07b54aa027dcceecc9713f1 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Thu, 25 Jan 2018 12:22:21 +0100
 Subject: [PATCH 09/10] Allow deeper hierarchies of RT cgroups
@@ -41,10 +41,10 @@ index 1a4fe6533527..4f49b9a26302 100644
  	if (IS_ERR(tg))
  		return ERR_PTR(-ENOMEM);
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 4a3064313c28..378db2e2b6a8 100644
+index 4b3403cb3a5d..c06a112687fa 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
-@@ -2044,6 +2044,14 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
+@@ -2043,6 +2043,14 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
  	if (tg == &root_task_group && rt_runtime == 0)
  		return -EINVAL;
  
@@ -59,7 +59,7 @@ index 4a3064313c28..378db2e2b6a8 100644
  	/* No period doesn't make any sense. */
  	if (rt_period == 0)
  		return -EINVAL;
-@@ -2131,11 +2139,24 @@ static int sched_rt_global_constraints(void)
+@@ -2130,11 +2138,24 @@ static int sched_rt_global_constraints(void)
  
  int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk)
  {
