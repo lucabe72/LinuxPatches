@@ -1,4 +1,4 @@
-From d3160f7c1eb5b710e8539c4950b6e39c1f69af60 Mon Sep 17 00:00:00 2001
+From 621ba46ce06570243590d5df8b878297962445ef Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Tue, 16 Jan 2018 11:42:28 +0100
 Subject: [PATCH 08/10] Add HCBS extraversion
@@ -8,16 +8,16 @@ Subject: [PATCH 08/10] Add HCBS extraversion
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/Makefile b/Makefile
-index 79ad2bfa24b6..ff429b2c3887 100644
+index c9132594860b..925c2544d0b1 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -2,7 +2,7 @@
  VERSION = 4
- PATCHLEVEL = 16
+ PATCHLEVEL = 18
  SUBLEVEL = 0
--EXTRAVERSION = -rc1
-+EXTRAVERSION = -rc1-HCBS
- NAME = Fearless Coyote
+-EXTRAVERSION = -rc2
++EXTRAVERSION = -rc2-HCBS
+ NAME = Merciless Moray
  
  # *DOCUMENTATION*
 -- 

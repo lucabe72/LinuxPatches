@@ -1,4 +1,4 @@
-From dac37fdbcea5055dbbac81595a68f9e8e61ec762 Mon Sep 17 00:00:00 2001
+From e6a698cbfb1d72111afc44ddfdc474f08b9ebd85 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Tue, 23 Jan 2018 12:46:06 +0100
 Subject: [PATCH 05/10] Fix stupid bug (and corresponding crash!)
@@ -9,10 +9,10 @@ To be squashed in a previous commit
  1 file changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index 41397b6a30b9..2fec64d181bc 100644
+index 620540aa98ad..cbce194c0657 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
-@@ -201,9 +201,9 @@ int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period)
+@@ -198,9 +198,9 @@ int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period)
  	dl_se->dl_runtime  = rt_runtime;
  	dl_se->dl_period   = rt_period;
  	dl_se->dl_deadline = dl_se->dl_period;
@@ -24,7 +24,7 @@ index 41397b6a30b9..2fec64d181bc 100644
  
  	/* ??? FIX THIS CRAP! ??? */
  	if (!((s64)(rt_period - rt_runtime) >= 0) ||
-@@ -1407,8 +1407,8 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
+@@ -1406,8 +1406,8 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
  			struct dl_bw *dl_b = dl_bw_of(task_cpu(p));
  
  			if (p->state == TASK_DEAD && dl_se->dl_non_contending) {

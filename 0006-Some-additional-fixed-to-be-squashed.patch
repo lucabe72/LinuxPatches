@@ -1,4 +1,4 @@
-From b942c88c0231a6f692dbac99cf129e32425d3703 Mon Sep 17 00:00:00 2001
+From 7314fec194e014120b6e22a110db64094deec47e Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Wed, 24 Jan 2018 00:31:18 +0100
 Subject: [PATCH 06/10] Some additional fixed to be squashed
@@ -9,10 +9,10 @@ Subject: [PATCH 06/10] Some additional fixed to be squashed
  2 files changed, 13 insertions(+), 12 deletions(-)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index 2fec64d181bc..24a6f22809c2 100644
+index cbce194c0657..61ec4bef0669 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
-@@ -1111,6 +1111,7 @@ static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
+@@ -1107,6 +1107,7 @@ static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
  #endif
  		} else {
  			replenish_dl_entity(dl_se, dl_se);
@@ -21,10 +21,10 @@ index 2fec64d181bc..24a6f22809c2 100644
  
  		raw_spin_unlock(&rq->lock);
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index c7f55bf33100..05d6d4d10e21 100644
+index 391403664fd8..8b9dfaae02fa 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
-@@ -47,18 +47,17 @@ void free_rt_sched_group(struct task_group *tg)
+@@ -43,18 +43,17 @@ void free_rt_sched_group(struct task_group *tg)
  	int i;
  
  	for_each_possible_cpu(i) {
@@ -47,7 +47,7 @@ index c7f55bf33100..05d6d4d10e21 100644
  	}
  
  	kfree(tg->rt_rq);
-@@ -631,13 +630,14 @@ static void dequeue_task_rt(struct rq *rq, struct task_struct *p, int flags)
+@@ -624,13 +623,14 @@ static void dequeue_task_rt(struct rq *rq, struct task_struct *p, int flags)
  	if (is_dl_group(rt_rq) && !rt_rq->rt_nr_running) {
  		struct sched_dl_entity *dl_se = dl_group_of(rt_rq);
  

@@ -1,4 +1,4 @@
-From 10e7f1edac07f90ba93f0e6c87164b83abd7089f Mon Sep 17 00:00:00 2001
+From 9593554b0b4cce4abc6680ef554e2b426f824402 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Fri, 16 Feb 2018 10:34:21 +0100
 Subject: [PATCH 10/10] Fix compilation with !CONFIG_RT_GROUP_SCHED
@@ -8,10 +8,10 @@ Subject: [PATCH 10/10] Fix compilation with !CONFIG_RT_GROUP_SCHED
  1 file changed, 2 insertions(+)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index 0d7f915c3ccb..9fc46c591740 100644
+index 95c4bf5bc2ab..05f4ae4a96bb 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
-@@ -193,6 +193,7 @@ int dl_check_tg(unsigned long total)
+@@ -190,6 +190,7 @@ int dl_check_tg(unsigned long total)
  	return 1;
  }
  
@@ -19,7 +19,7 @@ index 0d7f915c3ccb..9fc46c591740 100644
  int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period)
  {
  	struct rq *rq = container_of(dl_rq_of_se(dl_se), struct rq, dl);
-@@ -221,6 +222,7 @@ int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period)
+@@ -218,6 +219,7 @@ int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period)
  
  	return 1;
  }
