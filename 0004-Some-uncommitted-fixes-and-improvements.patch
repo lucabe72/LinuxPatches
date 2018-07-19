@@ -1,23 +1,24 @@
-From d094c63f3f0c0b41306c308c64aea6dfaf205aaa Mon Sep 17 00:00:00 2001
+From 8faafbcc65697305daf3792d7b7471107b822286 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Tue, 16 Jan 2018 11:24:48 +0100
-Subject: [PATCH 04/10] Some uncommitted fixes and improvements
+Subject: [PATCH 4/9] Some uncommitted fixes and improvements
 
 To be properly squashed / splitted / etc...
 ---
- kernel/sched/deadline.c | 94 +++++++++++++++++++++++++++++++++++--------------
+ kernel/sched/deadline.c | 96 +++++++++++++++++++++++++++++++++++--------------
  kernel/sched/rt.c       | 23 ++++--------
  kernel/sched/sched.h    |  2 ++
- 3 files changed, 76 insertions(+), 43 deletions(-)
+ 3 files changed, 78 insertions(+), 43 deletions(-)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index 46c98bf60b52..620540aa98ad 100644
+index 9c5334fa0f3b..97ca256b56ac 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
-@@ -190,6 +190,31 @@ int dl_check_tg(unsigned long total)
+@@ -190,6 +190,33 @@ int dl_check_tg(unsigned long total)
  	return 1;
  }
  
++#ifdef CONFIG_RT_GROUP_SCHED
 +int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period)
 +{
 +	struct rq *rq = container_of(dl_rq_of_se(dl_se), struct rq, dl);
@@ -42,11 +43,12 @@ index 46c98bf60b52..620540aa98ad 100644
 +
 +	return 1;
 +}
++#endif
 +
  void dl_change_utilization(struct task_struct *p, u64 new_bw)
  {
  	struct rq *rq;
-@@ -271,13 +296,13 @@ void dl_change_utilization(struct task_struct *p, u64 new_bw)
+@@ -271,13 +298,13 @@ void dl_change_utilization(struct task_struct *p, u64 new_bw)
   * up, and checks if the task is still in the "ACTIVE non contending"
   * state or not (in the second case, it updates running_bw).
   */
@@ -62,7 +64,7 @@ index 46c98bf60b52..620540aa98ad 100644
  
  	/*
  	 * If this is a non-deadline task that has been boosted,
-@@ -296,6 +321,8 @@ static void task_non_contending(struct task_struct *p)
+@@ -296,6 +323,8 @@ static void task_non_contending(struct task_struct *p)
  		 div64_long((dl_se->runtime * dl_se->dl_period),
  			dl_se->dl_runtime);
  
@@ -71,7 +73,7 @@ index 46c98bf60b52..620540aa98ad 100644
  	/*
  	 * Using relative times instead of the absolute "0-lag time"
  	 * allows to simplify the code
-@@ -307,9 +334,9 @@ static void task_non_contending(struct task_struct *p)
+@@ -307,9 +336,9 @@ static void task_non_contending(struct task_struct *p)
  	 * utilization now, instead of starting a timer
  	 */
  	if (zerolag_time < 0) {
@@ -83,7 +85,7 @@ index 46c98bf60b52..620540aa98ad 100644
  			struct dl_bw *dl_b = dl_bw_of(task_cpu(p));
  
  			if (p->state == TASK_DEAD)
-@@ -324,7 +351,7 @@ static void task_non_contending(struct task_struct *p)
+@@ -324,7 +353,7 @@ static void task_non_contending(struct task_struct *p)
  	}
  
  	dl_se->dl_non_contending = 1;
@@ -92,7 +94,7 @@ index 46c98bf60b52..620540aa98ad 100644
  	hrtimer_start(timer, ns_to_ktime(zerolag_time), HRTIMER_MODE_REL);
  }
  
-@@ -352,7 +379,8 @@ static void task_contending(struct sched_dl_entity *dl_se, int flags)
+@@ -352,7 +381,8 @@ static void task_contending(struct sched_dl_entity *dl_se, int flags)
  		 * so we are still safe.
  		 */
  		if (hrtimer_try_to_cancel(&dl_se->inactive_timer) == 1)
@@ -102,7 +104,7 @@ index 46c98bf60b52..620540aa98ad 100644
  	} else {
  		/*
  		 * Since "dl_non_contending" is not set, the
-@@ -1362,30 +1390,40 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
+@@ -1362,30 +1392,40 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
  	struct sched_dl_entity *dl_se = container_of(timer,
  						     struct sched_dl_entity,
  						     inactive_timer);
@@ -137,29 +139,29 @@ index 46c98bf60b52..620540aa98ad 100644
 +				sub_rq_bw(p->dl.dl_bw, dl_rq_of_se(&p->dl));
 +				dl_se->dl_non_contending = 0;
 +			}
- 
--		raw_spin_lock(&dl_b->lock);
--		__dl_sub(dl_b, p->dl.dl_bw, dl_bw_cpus(task_cpu(p)));
--		raw_spin_unlock(&dl_b->lock);
--		__dl_clear_params(p);
++
 +			raw_spin_lock(&dl_b->lock);
 +			__dl_sub(dl_b, p->dl.dl_bw, dl_bw_cpus(task_cpu(p)));
 +			raw_spin_unlock(&dl_b->lock);
 +			__dl_clear_params(p);
  
--		goto unlock;
+-		raw_spin_lock(&dl_b->lock);
+-		__dl_sub(dl_b, p->dl.dl_bw, dl_bw_cpus(task_cpu(p)));
+-		raw_spin_unlock(&dl_b->lock);
+-		__dl_clear_params(p);
 +			goto unlock;
 +		}
 +	} else {
 +		rq = container_of(dl_rq_of_se(dl_se), struct rq, dl);
 +		raw_spin_lock_irqsave(&rq->lock, flags);
-+
+ 
+-		goto unlock;
 +		sched_clock_tick();
 +		update_rq_clock(rq);
  	}
  	if (dl_se->dl_non_contending == 0)
  		goto unlock;
-@@ -1393,8 +1431,12 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
+@@ -1393,8 +1433,12 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
  	sub_running_bw(dl_se, &rq->dl);
  	dl_se->dl_non_contending = 0;
  unlock:
@@ -174,7 +176,7 @@ index 46c98bf60b52..620540aa98ad 100644
  
  	return HRTIMER_NORESTART;
  }
-@@ -1655,7 +1697,7 @@ static void dequeue_task_dl(struct rq *rq, struct task_struct *p, int flags)
+@@ -1655,7 +1699,7 @@ static void dequeue_task_dl(struct rq *rq, struct task_struct *p, int flags)
  	 * or "inactive")
  	 */
  	if (flags & DEQUEUE_SLEEP)
@@ -183,7 +185,7 @@ index 46c98bf60b52..620540aa98ad 100644
  }
  
  /*
-@@ -2441,7 +2483,7 @@ static void switched_from_dl(struct rq *rq, struct task_struct *p)
+@@ -2441,7 +2485,7 @@ static void switched_from_dl(struct rq *rq, struct task_struct *p)
  	 * will reset the task parameters.
  	 */
  	if (task_on_rq_queued(p) && p->dl.dl_runtime)
@@ -193,7 +195,7 @@ index 46c98bf60b52..620540aa98ad 100644
  	if (!task_on_rq_queued(p))
  		sub_rq_bw(&p->dl, &rq->dl);
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 2958d3fdaed6..391403664fd8 100644
+index 4e447b4da6de..94fa182e669d 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -49,6 +49,7 @@ void free_rt_sched_group(struct task_group *tg)

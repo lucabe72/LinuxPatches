@@ -1,7 +1,7 @@
-From 86f965954cd239db7d5552a86ba43badcfcf44ad Mon Sep 17 00:00:00 2001
+From 60f353875289c3d52c60814989ea95012d6d123c Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Wed, 24 Jan 2018 12:50:07 +0100
-Subject: [PATCH 07/10] Other assorted fixups
+Subject: [PATCH 7/9] Other assorted fixups
 
 Again, to be split / merged in previous patches
 ---
@@ -10,10 +10,10 @@ Again, to be split / merged in previous patches
  2 files changed, 20 insertions(+), 10 deletions(-)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index 61ec4bef0669..95c4bf5bc2ab 100644
+index 582a698af612..e685d1f0e4ce 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
-@@ -193,22 +193,26 @@ int dl_check_tg(unsigned long total)
+@@ -194,22 +194,26 @@ int dl_check_tg(unsigned long total)
  int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period)
  {
  	struct rq *rq = container_of(dl_rq_of_se(dl_se), struct rq, dl);
@@ -49,7 +49,7 @@ index 61ec4bef0669..95c4bf5bc2ab 100644
  	raw_spin_unlock_irq(&rq->lock);
  
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 8b9dfaae02fa..dead0e2c91b4 100644
+index 2e568d2705ac..e54c3f22db82 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -2021,6 +2021,13 @@ static int __rt_schedulable(struct task_group *tg, u64 period, u64 runtime)

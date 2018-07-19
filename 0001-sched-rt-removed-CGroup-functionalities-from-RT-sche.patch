@@ -1,7 +1,7 @@
-From dc61699eeddd7be1d587fafdbb72d8293c03c767 Mon Sep 17 00:00:00 2001
+From cda2537c61f18f53fa95b46f8cb623025f188209 Mon Sep 17 00:00:00 2001
 From: Alessio Balsini <a.balsini@sssup.it>
 Date: Fri, 31 Mar 2017 18:53:18 +0200
-Subject: [PATCH 01/10] sched/rt: removed CGroup functionalities from RT
+Subject: [PATCH 1/9] sched/rt: removed CGroup functionalities from RT
  scheduling class
 
 To implement a new throttling policy for RT cgroups, the already existing
@@ -20,9 +20,9 @@ Signed-off-by: Alessio Balsini <a.balsini@sssup.it>
  kernel/sched/core.c     |  10 +-
  kernel/sched/deadline.c |  27 --
  kernel/sched/debug.c    |   3 -
- kernel/sched/rt.c       | 835 ++----------------------------------------------
+ kernel/sched/rt.c       | 838 ++----------------------------------------------
  kernel/sched/sched.h    |  25 --
- 6 files changed, 21 insertions(+), 883 deletions(-)
+ 6 files changed, 21 insertions(+), 886 deletions(-)
 
 diff --git a/include/linux/sched.h b/include/linux/sched.h
 index 9256118bd40c..5b9cb0332552 100644
@@ -147,7 +147,7 @@ index c96e89cc4bc7..2bb4f01f458a 100644
  #undef PN
  #undef PU
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 47556b0c9a95..02de7061739b 100644
+index 47556b0c9a95..eb0ed2268a50 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -8,68 +8,6 @@
@@ -219,7 +219,7 @@ index 47556b0c9a95..02de7061739b 100644
  void init_rt_rq(struct rt_rq *rt_rq)
  {
  	struct rt_prio_array *array;
-@@ -90,22 +28,9 @@ void init_rt_rq(struct rt_rq *rt_rq)
+@@ -90,28 +28,12 @@ void init_rt_rq(struct rt_rq *rt_rq)
  	rt_rq->overloaded = 0;
  	plist_head_init(&rt_rq->pushable_tasks);
  #endif /* CONFIG_SMP */
@@ -242,7 +242,13 @@ index 47556b0c9a95..02de7061739b 100644
  
  static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)
  {
-@@ -136,9 +61,6 @@ void free_rt_sched_group(struct task_group *tg)
+-#ifdef CONFIG_SCHED_DEBUG
+-	WARN_ON_ONCE(!rt_entity_is_task(rt_se));
+-#endif
+ 	return container_of(rt_se, struct task_struct, rt);
+ }
+ 
+@@ -136,9 +58,6 @@ void free_rt_sched_group(struct task_group *tg)
  {
  	int i;
  
@@ -252,7 +258,7 @@ index 47556b0c9a95..02de7061739b 100644
  	for_each_possible_cpu(i) {
  		if (tg->rt_rq)
  			kfree(tg->rt_rq[i]);
-@@ -157,7 +79,6 @@ void init_tg_rt_entry(struct task_group *tg, struct rt_rq *rt_rq,
+@@ -157,7 +76,6 @@ void init_tg_rt_entry(struct task_group *tg, struct rt_rq *rt_rq,
  	struct rq *rq = cpu_rq(cpu);
  
  	rt_rq->highest_prio.curr = MAX_RT_PRIO;
@@ -260,7 +266,7 @@ index 47556b0c9a95..02de7061739b 100644
  	rt_rq->rq = rq;
  	rt_rq->tg = tg;
  
-@@ -167,12 +88,8 @@ void init_tg_rt_entry(struct task_group *tg, struct rt_rq *rt_rq,
+@@ -167,12 +85,8 @@ void init_tg_rt_entry(struct task_group *tg, struct rt_rq *rt_rq,
  	if (!rt_se)
  		return;
  
@@ -274,7 +280,7 @@ index 47556b0c9a95..02de7061739b 100644
  	rt_se->parent = parent;
  	INIT_LIST_HEAD(&rt_se->run_list);
  }
-@@ -190,9 +107,6 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
+@@ -190,9 +104,6 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
  	if (!tg->rt_se)
  		goto err;
  
@@ -284,7 +290,7 @@ index 47556b0c9a95..02de7061739b 100644
  	for_each_possible_cpu(i) {
  		rt_rq = kzalloc_node(sizeof(struct rt_rq),
  				     GFP_KERNEL, cpu_to_node(i));
-@@ -205,7 +119,6 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
+@@ -205,7 +116,6 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
  			goto err_free_rq;
  
  		init_rt_rq(rt_rq);
@@ -292,7 +298,7 @@ index 47556b0c9a95..02de7061739b 100644
  		init_tg_rt_entry(tg, rt_rq, rt_se, i, parent->rt_se[i]);
  	}
  
-@@ -219,8 +132,6 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
+@@ -219,8 +129,6 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
  
  #else /* CONFIG_RT_GROUP_SCHED */
  
@@ -301,7 +307,7 @@ index 47556b0c9a95..02de7061739b 100644
  static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)
  {
  	return container_of(rt_se, struct task_struct, rt);
-@@ -314,13 +225,7 @@ static void inc_rt_migration(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
+@@ -314,13 +222,7 @@ static void inc_rt_migration(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
  {
  	struct task_struct *p;
  
@@ -315,7 +321,7 @@ index 47556b0c9a95..02de7061739b 100644
  	if (p->nr_cpus_allowed > 1)
  		rt_rq->rt_nr_migratory++;
  
-@@ -331,13 +236,7 @@ static void dec_rt_migration(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
+@@ -331,13 +233,7 @@ static void dec_rt_migration(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
  {
  	struct task_struct *p;
  
@@ -329,7 +335,7 @@ index 47556b0c9a95..02de7061739b 100644
  	if (p->nr_cpus_allowed > 1)
  		rt_rq->rt_nr_migratory--;
  
-@@ -426,9 +325,6 @@ static inline void rt_queue_push_tasks(struct rq *rq)
+@@ -426,9 +322,6 @@ static inline void rt_queue_push_tasks(struct rq *rq)
  }
  #endif /* CONFIG_SMP */
  
@@ -339,7 +345,7 @@ index 47556b0c9a95..02de7061739b 100644
  static inline int on_rt_rq(struct sched_rt_entity *rt_se)
  {
  	return rt_se->on_rq;
-@@ -436,136 +332,14 @@ static inline int on_rt_rq(struct sched_rt_entity *rt_se)
+@@ -436,136 +329,14 @@ static inline int on_rt_rq(struct sched_rt_entity *rt_se)
  
  #ifdef CONFIG_RT_GROUP_SCHED
  
@@ -476,7 +482,7 @@ index 47556b0c9a95..02de7061739b 100644
  typedef struct rt_rq *rt_rq_iter_t;
  
  #define for_each_rt_rq(rt_rq, iter, rq) \
-@@ -574,372 +348,13 @@ typedef struct rt_rq *rt_rq_iter_t;
+@@ -574,372 +345,13 @@ typedef struct rt_rq *rt_rq_iter_t;
  #define for_each_sched_rt_entity(rt_se) \
  	for (; rt_se; rt_se = NULL)
  
@@ -849,7 +855,7 @@ index 47556b0c9a95..02de7061739b 100644
  /*
   * Update the current task's runtime statistics. Skip current tasks that
   * are not in our scheduling class.
-@@ -947,7 +362,6 @@ static int sched_rt_runtime_exceeded(struct rt_rq *rt_rq)
+@@ -947,7 +359,6 @@ static int sched_rt_runtime_exceeded(struct rt_rq *rt_rq)
  static void update_curr_rt(struct rq *rq)
  {
  	struct task_struct *curr = rq->curr;
@@ -857,7 +863,7 @@ index 47556b0c9a95..02de7061739b 100644
  	u64 delta_exec;
  	u64 now;
  
-@@ -969,59 +383,6 @@ static void update_curr_rt(struct rq *rq)
+@@ -969,59 +380,6 @@ static void update_curr_rt(struct rq *rq)
  	cgroup_account_cputime(curr, delta_exec);
  
  	sched_rt_avg_update(rq, delta_exec);
@@ -917,7 +923,7 @@ index 47556b0c9a95..02de7061739b 100644
  }
  
  #if defined CONFIG_SMP
-@@ -1031,13 +392,9 @@ inc_rt_prio_smp(struct rt_rq *rt_rq, int prio, int prev_prio)
+@@ -1031,13 +389,9 @@ inc_rt_prio_smp(struct rt_rq *rt_rq, int prio, int prev_prio)
  {
  	struct rq *rq = rq_of_rt_rq(rt_rq);
  
@@ -932,7 +938,7 @@ index 47556b0c9a95..02de7061739b 100644
  	if (rq->online && prio < prev_prio)
  		cpupri_set(&rq->rd->cpupri, rq->cpu, prio);
  }
-@@ -1047,13 +404,9 @@ dec_rt_prio_smp(struct rt_rq *rt_rq, int prio, int prev_prio)
+@@ -1047,13 +401,9 @@ dec_rt_prio_smp(struct rt_rq *rt_rq, int prio, int prev_prio)
  {
  	struct rq *rq = rq_of_rt_rq(rt_rq);
  
@@ -947,7 +953,7 @@ index 47556b0c9a95..02de7061739b 100644
  	if (rq->online && rt_rq->highest_prio.curr != prev_prio)
  		cpupri_set(&rq->rd->cpupri, rq->cpu, rt_rq->highest_prio.curr);
  }
-@@ -1112,60 +465,17 @@ static inline void dec_rt_prio(struct rt_rq *rt_rq, int prio) {}
+@@ -1112,60 +462,17 @@ static inline void dec_rt_prio(struct rt_rq *rt_rq, int prio) {}
  
  #endif /* CONFIG_SMP || CONFIG_RT_GROUP_SCHED */
  
@@ -1009,7 +1015,7 @@ index 47556b0c9a95..02de7061739b 100644
  	tsk = rt_task_of(rt_se);
  
  	return (tsk->policy == SCHED_RR) ? 1 : 0;
-@@ -1182,7 +492,6 @@ void inc_rt_tasks(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
+@@ -1182,7 +489,6 @@ void inc_rt_tasks(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
  
  	inc_rt_prio(rt_rq, prio);
  	inc_rt_migration(rt_se, rt_rq);
@@ -1017,7 +1023,7 @@ index 47556b0c9a95..02de7061739b 100644
  }
  
  static inline
-@@ -1195,7 +504,6 @@ void dec_rt_tasks(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
+@@ -1195,7 +501,6 @@ void dec_rt_tasks(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
  
  	dec_rt_prio(rt_rq, rt_se_prio(rt_se));
  	dec_rt_migration(rt_se, rt_rq);
@@ -1025,7 +1031,7 @@ index 47556b0c9a95..02de7061739b 100644
  }
  
  /*
-@@ -1221,25 +529,12 @@ static void __delist_rt_entity(struct sched_rt_entity *rt_se, struct rt_prio_arr
+@@ -1221,25 +526,12 @@ static void __delist_rt_entity(struct sched_rt_entity *rt_se, struct rt_prio_arr
  	rt_se->on_list = 0;
  }
  
@@ -1052,7 +1058,7 @@ index 47556b0c9a95..02de7061739b 100644
  	if (move_entity(flags)) {
  		WARN_ON_ONCE(rt_se->on_list);
  		if (flags & ENQUEUE_HEAD)
-@@ -1255,7 +550,7 @@ static void __enqueue_rt_entity(struct sched_rt_entity *rt_se, unsigned int flag
+@@ -1255,7 +547,7 @@ static void __enqueue_rt_entity(struct sched_rt_entity *rt_se, unsigned int flag
  	inc_rt_tasks(rt_se, rt_rq);
  }
  
@@ -1061,7 +1067,7 @@ index 47556b0c9a95..02de7061739b 100644
  {
  	struct rt_rq *rt_rq = rt_rq_of_se(rt_se);
  	struct rt_prio_array *array = &rt_rq->active;
-@@ -1269,52 +564,6 @@ static void __dequeue_rt_entity(struct sched_rt_entity *rt_se, unsigned int flag
+@@ -1269,52 +561,6 @@ static void __dequeue_rt_entity(struct sched_rt_entity *rt_se, unsigned int flag
  	dec_rt_tasks(rt_se, rt_rq);
  }
  
@@ -1114,7 +1120,7 @@ index 47556b0c9a95..02de7061739b 100644
  /*
   * Adding/removing a task to/from a priority array:
   */
-@@ -1515,11 +764,8 @@ static struct task_struct *_pick_next_task_rt(struct rq *rq)
+@@ -1515,11 +761,8 @@ static struct task_struct *_pick_next_task_rt(struct rq *rq)
  	struct task_struct *p;
  	struct rt_rq *rt_rq  = &rq->rt;
  
@@ -1128,7 +1134,7 @@ index 47556b0c9a95..02de7061739b 100644
  
  	p = rt_task_of(rt_se);
  	p->se.exec_start = rq_clock_task(rq);
-@@ -2158,8 +1404,6 @@ static void rq_online_rt(struct rq *rq)
+@@ -2158,8 +1401,6 @@ static void rq_online_rt(struct rq *rq)
  	if (rq->rt.overloaded)
  		rt_set_overload(rq);
  
@@ -1137,7 +1143,7 @@ index 47556b0c9a95..02de7061739b 100644
  	cpupri_set(&rq->rd->cpupri, rq->cpu, rq->rt.highest_prio.curr);
  }
  
-@@ -2169,8 +1413,6 @@ static void rq_offline_rt(struct rq *rq)
+@@ -2169,8 +1410,6 @@ static void rq_offline_rt(struct rq *rq)
  	if (rq->rt.overloaded)
  		rt_clear_overload(rq);
  
@@ -1146,7 +1152,7 @@ index 47556b0c9a95..02de7061739b 100644
  	cpupri_set(&rq->rd->cpupri, rq->cpu, CPUPRI_INVALID);
  }
  
-@@ -2427,8 +1669,8 @@ static int tg_rt_schedulable(struct task_group *tg, void *data)
+@@ -2427,8 +1666,8 @@ static int tg_rt_schedulable(struct task_group *tg, void *data)
  	unsigned long total, sum = 0;
  	u64 period, runtime;
  
@@ -1157,7 +1163,7 @@ index 47556b0c9a95..02de7061739b 100644
  
  	if (tg == d->tg) {
  		period = d->rt_period;
-@@ -2444,7 +1686,7 @@ static int tg_rt_schedulable(struct task_group *tg, void *data)
+@@ -2444,7 +1683,7 @@ static int tg_rt_schedulable(struct task_group *tg, void *data)
  	/*
  	 * Ensure we don't starve existing RT tasks.
  	 */
@@ -1166,7 +1172,7 @@ index 47556b0c9a95..02de7061739b 100644
  		return -EBUSY;
  
  	total = to_ratio(period, runtime);
-@@ -2459,8 +1701,8 @@ static int tg_rt_schedulable(struct task_group *tg, void *data)
+@@ -2459,8 +1698,8 @@ static int tg_rt_schedulable(struct task_group *tg, void *data)
  	 * The sum of our children's runtime should not exceed our own.
  	 */
  	list_for_each_entry_rcu(child, &tg->children, siblings) {
@@ -1177,7 +1183,7 @@ index 47556b0c9a95..02de7061739b 100644
  
  		if (child == d->tg) {
  			period = d->rt_period;
-@@ -2515,18 +1757,6 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
+@@ -2515,18 +1754,6 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
  	if (err)
  		goto unlock;
  
@@ -1196,7 +1202,7 @@ index 47556b0c9a95..02de7061739b 100644
  unlock:
  	read_unlock(&tasklist_lock);
  	mutex_unlock(&rt_constraints_mutex);
-@@ -2538,7 +1768,7 @@ int sched_group_set_rt_runtime(struct task_group *tg, long rt_runtime_us)
+@@ -2538,7 +1765,7 @@ int sched_group_set_rt_runtime(struct task_group *tg, long rt_runtime_us)
  {
  	u64 rt_runtime, rt_period;
  
@@ -1205,7 +1211,7 @@ index 47556b0c9a95..02de7061739b 100644
  	rt_runtime = (u64)rt_runtime_us * NSEC_PER_USEC;
  	if (rt_runtime_us < 0)
  		rt_runtime = RUNTIME_INF;
-@@ -2550,10 +1780,10 @@ long sched_group_rt_runtime(struct task_group *tg)
+@@ -2550,10 +1777,10 @@ long sched_group_rt_runtime(struct task_group *tg)
  {
  	u64 rt_runtime_us;
  
@@ -1218,7 +1224,7 @@ index 47556b0c9a95..02de7061739b 100644
  	do_div(rt_runtime_us, NSEC_PER_USEC);
  	return rt_runtime_us;
  }
-@@ -2563,7 +1793,7 @@ int sched_group_set_rt_period(struct task_group *tg, u64 rt_period_us)
+@@ -2563,7 +1790,7 @@ int sched_group_set_rt_period(struct task_group *tg, u64 rt_period_us)
  	u64 rt_runtime, rt_period;
  
  	rt_period = rt_period_us * NSEC_PER_USEC;
@@ -1227,7 +1233,7 @@ index 47556b0c9a95..02de7061739b 100644
  
  	return tg_set_rt_bandwidth(tg, rt_period, rt_runtime);
  }
-@@ -2572,7 +1802,7 @@ long sched_group_rt_period(struct task_group *tg)
+@@ -2572,7 +1799,7 @@ long sched_group_rt_period(struct task_group *tg)
  {
  	u64 rt_period_us;
  
@@ -1236,7 +1242,7 @@ index 47556b0c9a95..02de7061739b 100644
  	do_div(rt_period_us, NSEC_PER_USEC);
  	return rt_period_us;
  }
-@@ -2593,7 +1823,7 @@ static int sched_rt_global_constraints(void)
+@@ -2593,7 +1820,7 @@ static int sched_rt_global_constraints(void)
  int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk)
  {
  	/* Don't accept realtime tasks when there is no way for them to run */
@@ -1245,7 +1251,7 @@ index 47556b0c9a95..02de7061739b 100644
  		return 0;
  
  	return 1;
-@@ -2602,19 +1832,6 @@ int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk)
+@@ -2602,19 +1829,6 @@ int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk)
  #else /* !CONFIG_RT_GROUP_SCHED */
  static int sched_rt_global_constraints(void)
  {
@@ -1265,7 +1271,7 @@ index 47556b0c9a95..02de7061739b 100644
  	return 0;
  }
  #endif /* CONFIG_RT_GROUP_SCHED */
-@@ -2631,12 +1848,6 @@ static int sched_rt_global_validate(void)
+@@ -2631,12 +1845,6 @@ static int sched_rt_global_validate(void)
  	return 0;
  }
  
@@ -1278,7 +1284,7 @@ index 47556b0c9a95..02de7061739b 100644
  int sched_rt_handler(struct ctl_table *table, int write,
  		void __user *buffer, size_t *lenp,
  		loff_t *ppos)
-@@ -2664,7 +1875,6 @@ int sched_rt_handler(struct ctl_table *table, int write,
+@@ -2664,7 +1872,6 @@ int sched_rt_handler(struct ctl_table *table, int write,
  		if (ret)
  			goto undo;
  
@@ -1286,7 +1292,7 @@ index 47556b0c9a95..02de7061739b 100644
  		sched_dl_do_global();
  	}
  	if (0) {
-@@ -2703,12 +1913,5 @@ int sched_rr_handler(struct ctl_table *table, int write,
+@@ -2703,12 +1910,5 @@ int sched_rr_handler(struct ctl_table *table, int write,
  #ifdef CONFIG_SCHED_DEBUG
  void print_rt_stats(struct seq_file *m, int cpu)
  {

@@ -1,7 +1,7 @@
-From 7314fec194e014120b6e22a110db64094deec47e Mon Sep 17 00:00:00 2001
+From 0e7b7e044f91778d09b8d3074fe7976a353420d6 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
-Date: Wed, 24 Jan 2018 00:31:18 +0100
-Subject: [PATCH 06/10] Some additional fixed to be squashed
+Date: Fri, 29 Jun 2018 00:07:54 +0200
+Subject: [PATCH 6/9] Some additional fixed to be squashed
 
 ---
  kernel/sched/deadline.c |  1 +
@@ -9,10 +9,10 @@ Subject: [PATCH 06/10] Some additional fixed to be squashed
  2 files changed, 13 insertions(+), 12 deletions(-)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index cbce194c0657..61ec4bef0669 100644
+index 66ee653c167d..582a698af612 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
-@@ -1107,6 +1107,7 @@ static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
+@@ -1109,6 +1109,7 @@ static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
  #endif
  		} else {
  			replenish_dl_entity(dl_se, dl_se);
@@ -21,7 +21,7 @@ index cbce194c0657..61ec4bef0669 100644
  
  		raw_spin_unlock(&rq->lock);
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 391403664fd8..8b9dfaae02fa 100644
+index 94fa182e669d..2e568d2705ac 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -43,18 +43,17 @@ void free_rt_sched_group(struct task_group *tg)
@@ -52,14 +52,14 @@ index 391403664fd8..8b9dfaae02fa 100644
  		struct sched_dl_entity *dl_se = dl_group_of(rt_rq);
  
 -#ifndef CONFIG_RT_GROUP_SCHED
--		queue_pull_task(rq);
+-		rt_queue_pull_task(rq);
 -#endif
 -		if (!rt_rq->rt_nr_running) {
 -			dequeue_dl_entity(dl_se);
 -			task_non_contending(dl_se);
 -			resched_curr(rq);
 +		if (!dl_se->dl_throttled) {
-+			queue_pull_task(rq);
++			rt_queue_pull_task(rq);
 +
 +			if (!rt_rq->rt_nr_running) {
 +				dequeue_dl_entity(dl_se);

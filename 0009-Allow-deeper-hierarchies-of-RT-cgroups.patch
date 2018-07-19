@@ -1,7 +1,7 @@
-From c8e253a3fec064a707073fbafcb8f231deb97791 Mon Sep 17 00:00:00 2001
+From f28eb5b4ee703610d232d9fa71e886a23f40ab83 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Thu, 25 Jan 2018 12:22:21 +0100
-Subject: [PATCH 09/10] Allow deeper hierarchies of RT cgroups
+Subject: [PATCH 9/9] Allow deeper hierarchies of RT cgroups
 
 The basic rule is that:
 - if a cgroup contains RT tasks than it cannot have other cgroups
@@ -41,7 +41,7 @@ index 4538d83321cf..0dc12f1faeaf 100644
  	if (IS_ERR(tg))
  		return ERR_PTR(-ENOMEM);
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index dead0e2c91b4..6f9732e96945 100644
+index e54c3f22db82..1d4aa669062d 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -2047,6 +2047,14 @@ static int tg_set_rt_bandwidth(struct task_group *tg,

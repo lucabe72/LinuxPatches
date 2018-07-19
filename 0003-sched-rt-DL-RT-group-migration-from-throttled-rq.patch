@@ -1,7 +1,7 @@
-From bf9ddbfa0239678edfac5b59e7f2d0833f4ba800 Mon Sep 17 00:00:00 2001
+From c8ebff9a341f0466e0a7e9d28146d944461a6e85 Mon Sep 17 00:00:00 2001
 From: Alessio Balsini <a.balsini@sssup.it>
 Date: Fri, 31 Mar 2017 19:44:37 +0200
-Subject: [PATCH 03/10] sched/rt: DL-RT group migration from throttled rq
+Subject: [PATCH 3/9] sched/rt: DL-RT group migration from throttled rq
 
 When the runtime is exhausted in a RT CGroup, the scheduler checks for
 another non-throttled runqueue and, if available, migrates the tasks.
@@ -26,7 +26,7 @@ Signed-off-by: Alessio Balsini <a.balsini@sssup.it>
  3 files changed, 408 insertions(+), 45 deletions(-)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index 38627bf271b9..46c98bf60b52 100644
+index 38627bf271b9..9c5334fa0f3b 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
 @@ -19,8 +19,17 @@
@@ -461,7 +461,7 @@ index 38627bf271b9..46c98bf60b52 100644
  	 */
 +#ifdef CONFIG_RT_GROUP_SCHED
 +	if (!rq->dl.dl_nr_total)
-+		queue_pull_task(rq);
++		deadline_queue_pull_task(rq);
 +#else
  	if (!task_on_rq_queued(p) || rq->dl.dl_nr_running)
  		return;
@@ -482,7 +482,7 @@ index 38627bf271b9..46c98bf60b52 100644
  
  bool dl_param_changed(struct task_struct *p, const struct sched_attr *attr)
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index a00071186816..2958d3fdaed6 100644
+index 83995111b158..4e447b4da6de 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -896,6 +896,14 @@ static void put_prev_task_rt(struct rq *rq, struct task_struct *p)
@@ -683,7 +683,7 @@ index a00071186816..2958d3fdaed6 100644
 -	rt_queue_pull_task(rq);
 -#endif
 +	if (!is_dl_group(rt_rq))
-+		queue_pull_task(rq);
++		rt_queue_pull_task(rq);
 +	else
 +		queue_pull_to_group(rq, rt_rq);
  }
@@ -719,7 +719,7 @@ index a00071186816..2958d3fdaed6 100644
 -#endif
 +		if (oldprio < p->prio) {
 +			if (!is_dl_group(rt_rq))
-+				queue_pull_task(rq);
++				rt_queue_pull_task(rq);
 +			else
 +				queue_pull_to_group(rq, rt_rq);
 +		}
