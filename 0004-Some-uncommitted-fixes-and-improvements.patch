@@ -1,20 +1,20 @@
-From 8faafbcc65697305daf3792d7b7471107b822286 Mon Sep 17 00:00:00 2001
+From d08f6995f231107be9b0998fcfd2d0e0057cd74b Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Tue, 16 Jan 2018 11:24:48 +0100
 Subject: [PATCH 4/9] Some uncommitted fixes and improvements
 
 To be properly squashed / splitted / etc...
 ---
- kernel/sched/deadline.c | 96 +++++++++++++++++++++++++++++++++++--------------
- kernel/sched/rt.c       | 23 ++++--------
- kernel/sched/sched.h    |  2 ++
+ kernel/sched/deadline.c | 96 ++++++++++++++++++++++++++++++-----------
+ kernel/sched/rt.c       | 23 +++-------
+ kernel/sched/sched.h    |  2 +
  3 files changed, 78 insertions(+), 43 deletions(-)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index 9c5334fa0f3b..97ca256b56ac 100644
+index 82db41624719..ae2d46ba1228 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
-@@ -190,6 +190,33 @@ int dl_check_tg(unsigned long total)
+@@ -191,6 +191,33 @@ int dl_check_tg(unsigned long total)
  	return 1;
  }
  
@@ -48,7 +48,7 @@ index 9c5334fa0f3b..97ca256b56ac 100644
  void dl_change_utilization(struct task_struct *p, u64 new_bw)
  {
  	struct rq *rq;
-@@ -271,13 +298,13 @@ void dl_change_utilization(struct task_struct *p, u64 new_bw)
+@@ -272,13 +299,13 @@ void dl_change_utilization(struct task_struct *p, u64 new_bw)
   * up, and checks if the task is still in the "ACTIVE non contending"
   * state or not (in the second case, it updates running_bw).
   */
@@ -76,7 +76,7 @@ index 9c5334fa0f3b..97ca256b56ac 100644
 @@ -307,9 +336,9 @@ static void task_non_contending(struct task_struct *p)
  	 * utilization now, instead of starting a timer
  	 */
- 	if (zerolag_time < 0) {
+ 	if ((zerolag_time < 0) || hrtimer_active(&dl_se->inactive_timer)) {
 -		if (dl_task(p))
 +		if ((p == NULL) || dl_task(p))
  			sub_running_bw(dl_se, dl_rq);
@@ -104,7 +104,7 @@ index 9c5334fa0f3b..97ca256b56ac 100644
  	} else {
  		/*
  		 * Since "dl_non_contending" is not set, the
-@@ -1362,30 +1392,40 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
+@@ -1360,30 +1390,40 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
  	struct sched_dl_entity *dl_se = container_of(timer,
  						     struct sched_dl_entity,
  						     inactive_timer);
@@ -135,8 +135,8 @@ index 9c5334fa0f3b..97ca256b56ac 100644
 -			dl_se->dl_non_contending = 0;
 -		}
 +			if (p->state == TASK_DEAD && dl_se->dl_non_contending) {
-+				sub_running_bw(p->dl.dl_bw, dl_rq_of_se(&p->dl));
-+				sub_rq_bw(p->dl.dl_bw, dl_rq_of_se(&p->dl));
++				sub_running_bw(&p->dl, dl_rq_of_se(&p->dl));
++				sub_rq_bw(&p->dl, dl_rq_of_se(&p->dl));
 +				dl_se->dl_non_contending = 0;
 +			}
 +
@@ -161,7 +161,7 @@ index 9c5334fa0f3b..97ca256b56ac 100644
  	}
  	if (dl_se->dl_non_contending == 0)
  		goto unlock;
-@@ -1393,8 +1433,12 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
+@@ -1391,8 +1431,12 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
  	sub_running_bw(dl_se, &rq->dl);
  	dl_se->dl_non_contending = 0;
  unlock:
@@ -176,7 +176,7 @@ index 9c5334fa0f3b..97ca256b56ac 100644
  
  	return HRTIMER_NORESTART;
  }
-@@ -1655,7 +1699,7 @@ static void dequeue_task_dl(struct rq *rq, struct task_struct *p, int flags)
+@@ -1653,7 +1697,7 @@ static void dequeue_task_dl(struct rq *rq, struct task_struct *p, int flags)
  	 * or "inactive")
  	 */
  	if (flags & DEQUEUE_SLEEP)
@@ -185,20 +185,20 @@ index 9c5334fa0f3b..97ca256b56ac 100644
  }
  
  /*
-@@ -2441,7 +2485,7 @@ static void switched_from_dl(struct rq *rq, struct task_struct *p)
+@@ -2445,7 +2489,7 @@ static void switched_from_dl(struct rq *rq, struct task_struct *p)
  	 * will reset the task parameters.
  	 */
  	if (task_on_rq_queued(p) && p->dl.dl_runtime)
 -		task_non_contending(p);
 +		task_non_contending(&p->dl);
  
- 	if (!task_on_rq_queued(p))
- 		sub_rq_bw(&p->dl, &rq->dl);
+ 	if (!task_on_rq_queued(p)) {
+ 		/*
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 4e447b4da6de..94fa182e669d 100644
+index d9e52081c37b..d73fa356872e 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
-@@ -49,6 +49,7 @@ void free_rt_sched_group(struct task_group *tg)
+@@ -51,6 +51,7 @@ void free_rt_sched_group(struct task_group *tg)
  			raw_spin_lock_irqsave(&cpu_rq(i)->lock, flags);
  			if (!tg->dl_se[i]->dl_throttled)
  				dequeue_dl_entity(tg->dl_se[i]);
@@ -206,7 +206,7 @@ index 4e447b4da6de..94fa182e669d 100644
  			raw_spin_unlock_irqrestore(&cpu_rq(i)->lock, flags);
  
  			hrtimer_cancel(&tg->dl_se[i]->dl_timer);
-@@ -112,6 +113,7 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
+@@ -114,6 +115,7 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
  		rt_rq->rq = cpu_rq(i);
  
  		init_dl_task_timer(dl_se);
@@ -231,7 +231,7 @@ index 4e447b4da6de..94fa182e669d 100644
  			resched_curr(rq);
  		}
  	}
-@@ -2055,22 +2058,8 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
+@@ -2059,22 +2062,8 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
  		goto unlock_bandwidth;
  
  	for_each_possible_cpu(i) {
@@ -257,10 +257,10 @@ index 4e447b4da6de..94fa182e669d 100644
  unlock_bandwidth:
  	raw_spin_unlock_irq(&tg->dl_bandwidth.dl_runtime_lock);
 diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
-index e02779c456eb..8880a400656f 100644
+index af7e92cbc4e3..11d53bdb6a6f 100644
 --- a/kernel/sched/sched.h
 +++ b/kernel/sched/sched.h
-@@ -291,6 +291,7 @@ void __dl_add(struct dl_bw *dl_b, u64 tsk_bw, int cpus)
+@@ -298,6 +298,7 @@ void __dl_add(struct dl_bw *dl_b, u64 tsk_bw, int cpus)
  }
  
  int dl_check_tg(unsigned long total);
@@ -268,7 +268,7 @@ index e02779c456eb..8880a400656f 100644
  extern void dl_change_utilization(struct task_struct *p, u64 new_bw);
  extern void init_dl_bw(struct dl_bw *dl_b);
  extern int  sched_dl_global_validate(void);
-@@ -2273,6 +2274,7 @@ void dequeue_pushable_task(struct rt_rq *rt_rq, struct task_struct *p)
+@@ -2427,6 +2428,7 @@ void dequeue_pushable_task(struct rt_rq *rt_rq, struct task_struct *p)
  int is_dl_group(struct rt_rq *rt_rq);
  
  void dequeue_dl_entity(struct sched_dl_entity *dl_se);
@@ -277,5 +277,5 @@ index e02779c456eb..8880a400656f 100644
  void init_dl_timer(struct sched_dl_entity *dl_se);
  
 -- 
-2.14.1
+2.19.1
 

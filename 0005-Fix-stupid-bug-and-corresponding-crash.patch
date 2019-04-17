@@ -1,6 +1,6 @@
-From d3d754605abf8c909dc9e05f727b1c3b8a64459e Mon Sep 17 00:00:00 2001
+From 45295101adad82e31f78dee547ddc4ca5ab1c741 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
-Date: Tue, 23 Jan 2018 12:46:06 +0100
+Date: Wed, 17 Apr 2019 13:34:23 +0200
 Subject: [PATCH 5/9] Fix stupid bug (and corresponding crash!)
 
 To be squashed in a previous commit
@@ -9,10 +9,10 @@ To be squashed in a previous commit
  1 file changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index 97ca256b56ac..66ee653c167d 100644
+index ae2d46ba1228..f9c011e00d1d 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
-@@ -199,9 +199,9 @@ int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period)
+@@ -200,9 +200,9 @@ int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period)
  	dl_se->dl_runtime  = rt_runtime;
  	dl_se->dl_period   = rt_period;
  	dl_se->dl_deadline = dl_se->dl_period;
@@ -24,17 +24,17 @@ index 97ca256b56ac..66ee653c167d 100644
  
  	/* ??? FIX THIS CRAP! ??? */
  	if (!((s64)(rt_period - rt_runtime) >= 0) ||
-@@ -1408,8 +1408,8 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
+@@ -1406,8 +1406,8 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
  			struct dl_bw *dl_b = dl_bw_of(task_cpu(p));
  
  			if (p->state == TASK_DEAD && dl_se->dl_non_contending) {
--				sub_running_bw(p->dl.dl_bw, dl_rq_of_se(&p->dl));
--				sub_rq_bw(p->dl.dl_bw, dl_rq_of_se(&p->dl));
+-				sub_running_bw(&p->dl, dl_rq_of_se(&p->dl));
+-				sub_rq_bw(&p->dl, dl_rq_of_se(&p->dl));
 +				sub_running_bw(dl_se, dl_rq_of_se(dl_se));
 +				sub_rq_bw(dl_se, dl_rq_of_se(dl_se));
  				dl_se->dl_non_contending = 0;
  			}
  
 -- 
-2.14.1
+2.19.1
 

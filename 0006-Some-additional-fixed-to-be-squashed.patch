@@ -1,4 +1,4 @@
-From 0e7b7e044f91778d09b8d3074fe7976a353420d6 Mon Sep 17 00:00:00 2001
+From 7b614b042c4c9d88ec3cec18e344f13ee157a0dc Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Fri, 29 Jun 2018 00:07:54 +0200
 Subject: [PATCH 6/9] Some additional fixed to be squashed
@@ -9,7 +9,7 @@ Subject: [PATCH 6/9] Some additional fixed to be squashed
  2 files changed, 13 insertions(+), 12 deletions(-)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index 66ee653c167d..582a698af612 100644
+index f9c011e00d1d..d98e144ab8f6 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
 @@ -1109,6 +1109,7 @@ static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
@@ -21,10 +21,10 @@ index 66ee653c167d..582a698af612 100644
  
  		raw_spin_unlock(&rq->lock);
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 94fa182e669d..2e568d2705ac 100644
+index d73fa356872e..31b32f6a573f 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
-@@ -43,18 +43,17 @@ void free_rt_sched_group(struct task_group *tg)
+@@ -45,18 +45,17 @@ void free_rt_sched_group(struct task_group *tg)
  	int i;
  
  	for_each_possible_cpu(i) {
@@ -70,5 +70,5 @@ index 94fa182e669d..2e568d2705ac 100644
  	}
  }
 -- 
-2.14.1
+2.19.1
 
