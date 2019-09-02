@@ -395,7 +395,7 @@ index 47bddcfbfd49..e09cccc9c592 100644
 +
 +	BUG_ON(!is_dl_group(rt_rq));
 +
-+	for_each_possible_cpu(cpu) {
++	for_each_online_cpu(cpu) {
 +		if (cpu == -1)
 +			continue;
 +		if (cpu == rq->cpu)
@@ -493,7 +493,7 @@ index 47bddcfbfd49..e09cccc9c592 100644
 +	int this_cpu = this_rq->cpu, cpu, tries = 0, ret = 0;
 +
 +	this_dl_se = dl_group_of(this_rt_rq);
-+	for_each_possible_cpu(cpu) {
++	for_each_online_cpu(cpu) {
 +		if (cpu == -1)
 +			continue;
 +		if (cpu == this_rq->cpu)
