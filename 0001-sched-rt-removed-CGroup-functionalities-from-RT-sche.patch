@@ -1,4 +1,4 @@
-From 7bf41fb9f271a35bce715c226caee90f79653323 Mon Sep 17 00:00:00 2001
+From 1b897d718ab13f661f973d7fa724a83e51ff8d0a Mon Sep 17 00:00:00 2001
 From: Alessio Balsini <a.balsini@sssup.it>
 Date: Fri, 31 Mar 2017 18:53:18 +0200
 Subject: [PATCH 1/9] sched/rt: removed CGroup functionalities from RT
@@ -16,28 +16,19 @@ Cc: Ingo Molnar <mingo@redhat.com>
 Cc: Peter Zijlstra <peterz@infradead.org>
 Signed-off-by: Alessio Balsini <a.balsini@sssup.it>
 ---
- include/linux/sched.h   |   4 +-
+ include/linux/sched.h   |   2 -
  kernel/sched/core.c     |  10 +-
  kernel/sched/deadline.c |  27 --
  kernel/sched/debug.c    |   3 -
  kernel/sched/rt.c       | 855 +---------------------------------------
  kernel/sched/sched.h    |  28 +-
- 6 files changed, 23 insertions(+), 904 deletions(-)
+ 6 files changed, 22 insertions(+), 903 deletions(-)
 
 diff --git a/include/linux/sched.h b/include/linux/sched.h
-index 1549584a1538..9d2f7159f963 100644
+index 1157f6e245af..b92f5343fa8f 100644
 --- a/include/linux/sched.h
 +++ b/include/linux/sched.h
-@@ -460,7 +460,7 @@ struct sched_entity {
- 	/* rq on which this entity is (to be) queued: */
- 	struct cfs_rq			*cfs_rq;
- 	/* rq "owned" by this entity/group: */
--	struct cfs_rq			*my_q;
-+	struct cfs_rq                   *my_q;
- #endif
- 
- #ifdef CONFIG_SMP
-@@ -487,8 +487,6 @@ struct sched_rt_entity {
+@@ -486,8 +486,6 @@ struct sched_rt_entity {
  	struct sched_rt_entity		*parent;
  	/* rq on which this entity is (to be) queued: */
  	struct rt_rq			*rt_rq;
@@ -47,10 +38,10 @@ index 1549584a1538..9d2f7159f963 100644
  } __randomize_layout;
  
 diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index f9e911785b4a..b82ee808b61c 100644
+index 4d5962232a55..b72885a68353 100644
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/core.c
-@@ -4249,8 +4249,7 @@ static int __sched_setscheduler(struct task_struct *p,
+@@ -4250,8 +4250,7 @@ static int __sched_setscheduler(struct task_struct *p,
  		 * Do not allow realtime tasks into groups that have no runtime
  		 * assigned.
  		 */
@@ -60,7 +51,7 @@ index f9e911785b4a..b82ee808b61c 100644
  				!task_group_is_autogroup(task_group(p))) {
  			task_rq_unlock(rq, p, &rf);
  			return -EPERM;
-@@ -5941,18 +5940,12 @@ void __init sched_init(void)
+@@ -5942,18 +5941,12 @@ void __init sched_init(void)
  	}
  #endif /* CONFIG_CPUMASK_OFFSTACK */
  
@@ -79,7 +70,7 @@ index f9e911785b4a..b82ee808b61c 100644
  #ifdef CONFIG_CGROUP_SCHED
  	task_group_cache = KMEM_CACHE(task_group, 0);
  
-@@ -6000,7 +5993,6 @@ void __init sched_init(void)
+@@ -6001,7 +5994,6 @@ void __init sched_init(void)
  		init_tg_cfs_entry(&root_task_group, &rq->cfs, NULL, i, NULL);
  #endif /* CONFIG_FAIR_GROUP_SCHED */
  
@@ -133,10 +124,10 @@ index 43901fa3f269..55cfac087f20 100644
  
  static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
 diff --git a/kernel/sched/debug.c b/kernel/sched/debug.c
-index 8039d62ae36e..85d783e05279 100644
+index 14c6a8716ba1..52659632d5b6 100644
 --- a/kernel/sched/debug.c
 +++ b/kernel/sched/debug.c
-@@ -596,9 +596,6 @@ void print_rt_rq(struct seq_file *m, int cpu, struct rt_rq *rt_rq)
+@@ -593,9 +593,6 @@ void print_rt_rq(struct seq_file *m, int cpu, struct rt_rq *rt_rq)
  #ifdef CONFIG_SMP
  	PU(rt_nr_migratory);
  #endif
@@ -147,7 +138,7 @@ index 8039d62ae36e..85d783e05279 100644
  #undef PN
  #undef PU
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 90fa23d36565..3f7bb7f9e988 100644
+index 1e6b909dca36..661dc0ed4853 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -10,68 +10,6 @@
@@ -1234,7 +1225,7 @@ index 90fa23d36565..3f7bb7f9e988 100644
  	rt_runtime = (u64)rt_runtime_us * NSEC_PER_USEC;
  	if (rt_runtime_us < 0)
  		rt_runtime = RUNTIME_INF;
-@@ -2563,10 +1775,10 @@ long sched_group_rt_runtime(struct task_group *tg)
+@@ -2565,10 +1777,10 @@ long sched_group_rt_runtime(struct task_group *tg)
  {
  	u64 rt_runtime_us;
  
@@ -1247,8 +1238,8 @@ index 90fa23d36565..3f7bb7f9e988 100644
  	do_div(rt_runtime_us, NSEC_PER_USEC);
  	return rt_runtime_us;
  }
-@@ -2576,7 +1788,7 @@ int sched_group_set_rt_period(struct task_group *tg, u64 rt_period_us)
- 	u64 rt_runtime, rt_period;
+@@ -2581,7 +1793,7 @@ int sched_group_set_rt_period(struct task_group *tg, u64 rt_period_us)
+ 		return -EINVAL;
  
  	rt_period = rt_period_us * NSEC_PER_USEC;
 -	rt_runtime = tg->rt_bandwidth.rt_runtime;
@@ -1256,7 +1247,7 @@ index 90fa23d36565..3f7bb7f9e988 100644
  
  	return tg_set_rt_bandwidth(tg, rt_period, rt_runtime);
  }
-@@ -2585,7 +1797,7 @@ long sched_group_rt_period(struct task_group *tg)
+@@ -2590,7 +1802,7 @@ long sched_group_rt_period(struct task_group *tg)
  {
  	u64 rt_period_us;
  
@@ -1265,7 +1256,7 @@ index 90fa23d36565..3f7bb7f9e988 100644
  	do_div(rt_period_us, NSEC_PER_USEC);
  	return rt_period_us;
  }
-@@ -2606,7 +1818,7 @@ static int sched_rt_global_constraints(void)
+@@ -2611,7 +1823,7 @@ static int sched_rt_global_constraints(void)
  int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk)
  {
  	/* Don't accept realtime tasks when there is no way for them to run */
@@ -1274,7 +1265,7 @@ index 90fa23d36565..3f7bb7f9e988 100644
  		return 0;
  
  	return 1;
-@@ -2615,19 +1827,6 @@ int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk)
+@@ -2620,19 +1832,6 @@ int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk)
  #else /* !CONFIG_RT_GROUP_SCHED */
  static int sched_rt_global_constraints(void)
  {
@@ -1294,7 +1285,7 @@ index 90fa23d36565..3f7bb7f9e988 100644
  	return 0;
  }
  #endif /* CONFIG_RT_GROUP_SCHED */
-@@ -2644,12 +1843,6 @@ static int sched_rt_global_validate(void)
+@@ -2649,12 +1848,6 @@ static int sched_rt_global_validate(void)
  	return 0;
  }
  
@@ -1307,7 +1298,7 @@ index 90fa23d36565..3f7bb7f9e988 100644
  int sched_rt_handler(struct ctl_table *table, int write,
  		void __user *buffer, size_t *lenp,
  		loff_t *ppos)
-@@ -2677,7 +1870,6 @@ int sched_rt_handler(struct ctl_table *table, int write,
+@@ -2682,7 +1875,6 @@ int sched_rt_handler(struct ctl_table *table, int write,
  		if (ret)
  			goto undo;
  
@@ -1315,7 +1306,7 @@ index 90fa23d36565..3f7bb7f9e988 100644
  		sched_dl_do_global();
  	}
  	if (0) {
-@@ -2716,12 +1908,5 @@ int sched_rr_handler(struct ctl_table *table, int write,
+@@ -2721,12 +1913,5 @@ int sched_rr_handler(struct ctl_table *table, int write,
  #ifdef CONFIG_SCHED_DEBUG
  void print_rt_stats(struct seq_file *m, int cpu)
  {
@@ -1403,5 +1394,5 @@ index b52ed1ada0be..046eb3671546 100644
  extern void init_dl_bandwidth(struct dl_bandwidth *dl_b, u64 period, u64 runtime);
  extern void init_dl_task_timer(struct sched_dl_entity *dl_se);
 -- 
-2.19.1
+2.20.1
 

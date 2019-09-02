@@ -1,4 +1,4 @@
-From b789a90c3c9a06c9c2e12586f51c3111ce13c413 Mon Sep 17 00:00:00 2001
+From dbb24b4a9a7afb50c02215640e272bd58887251a Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Wed, 17 Apr 2019 13:28:01 +0200
 Subject: [PATCH 3/9] sched/rt: DL-RT group migration from throttled rq
@@ -363,7 +363,7 @@ index e5a82ec729b1..82db41624719 100644
  
  bool dl_param_changed(struct task_struct *p, const struct sched_attr *attr)
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 1ea723f1bbec..d9e52081c37b 100644
+index 47bddcfbfd49..e09cccc9c592 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -907,6 +907,14 @@ static void put_prev_task_rt(struct rq *rq, struct task_struct *p)
@@ -628,5 +628,5 @@ index c2187e83dd59..af7e92cbc4e3 100644
  void dequeue_pushable_task(struct rt_rq *rt_rq, struct task_struct *p);
  #else
 -- 
-2.19.1
+2.20.1
 

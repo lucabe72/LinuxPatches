@@ -1,4 +1,4 @@
-From d08f6995f231107be9b0998fcfd2d0e0057cd74b Mon Sep 17 00:00:00 2001
+From 39eb3101161a4381e45813e86acaa33a15a569b0 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Tue, 16 Jan 2018 11:24:48 +0100
 Subject: [PATCH 4/9] Some uncommitted fixes and improvements
@@ -195,7 +195,7 @@ index 82db41624719..ae2d46ba1228 100644
  	if (!task_on_rq_queued(p)) {
  		/*
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index d9e52081c37b..d73fa356872e 100644
+index e09cccc9c592..e90e4cab2b47 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -51,6 +51,7 @@ void free_rt_sched_group(struct task_group *tg)
@@ -277,5 +277,5 @@ index af7e92cbc4e3..11d53bdb6a6f 100644
  void init_dl_timer(struct sched_dl_entity *dl_se);
  
 -- 
-2.19.1
+2.20.1
 

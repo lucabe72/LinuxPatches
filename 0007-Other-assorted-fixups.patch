@@ -1,4 +1,4 @@
-From 1d496b0084f141c3ea8c8b70d789e7acc1153ec4 Mon Sep 17 00:00:00 2001
+From 0be77b4d42ffe85515ccfa8af37ef6c753c14edd Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Wed, 24 Jan 2018 12:50:07 +0100
 Subject: [PATCH 7/9] Other assorted fixups
@@ -49,7 +49,7 @@ index d98e144ab8f6..70743935f4af 100644
  	raw_spin_unlock_irq(&rq->lock);
  
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 31b32f6a573f..12cec8480f8f 100644
+index 05d361024fd4..8087a3e821bf 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -2025,6 +2025,13 @@ static int __rt_schedulable(struct task_group *tg, u64 period, u64 runtime)
@@ -77,5 +77,5 @@ index 31b32f6a573f..12cec8480f8f 100644
  unlock_bandwidth:
  	raw_spin_unlock_irq(&tg->dl_bandwidth.dl_runtime_lock);
 -- 
-2.19.1
+2.20.1
 

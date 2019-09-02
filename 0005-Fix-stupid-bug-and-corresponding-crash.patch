@@ -1,4 +1,4 @@
-From 45295101adad82e31f78dee547ddc4ca5ab1c741 Mon Sep 17 00:00:00 2001
+From 641ae4ba052b6cb08733bbc0523939192d301dd6 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Wed, 17 Apr 2019 13:34:23 +0200
 Subject: [PATCH 5/9] Fix stupid bug (and corresponding crash!)
@@ -36,5 +36,5 @@ index ae2d46ba1228..f9c011e00d1d 100644
  			}
  
 -- 
-2.19.1
+2.20.1
 

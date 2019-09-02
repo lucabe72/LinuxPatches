@@ -1,4 +1,4 @@
-From a0ba13e28c271a80144a96d6c5e33c538e3b48cf Mon Sep 17 00:00:00 2001
+From 4c23916fee3015444dcab2c68a981d59a0ad50be Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Tue, 16 Jan 2018 11:42:28 +0100
 Subject: [PATCH 8/9] Add HCBS extraversion
@@ -8,18 +8,18 @@ Subject: [PATCH 8/9] Add HCBS extraversion
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/Makefile b/Makefile
-index 71fd5c2ce067..4550f76affc8 100644
+index bad87c4c8117..b44de6cd6404 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -2,7 +2,7 @@
  VERSION = 5
- PATCHLEVEL = 1
- SUBLEVEL = 0
--EXTRAVERSION = -rc5
-+EXTRAVERSION = -rc5-HCBS
- NAME = Shy Crocodile
+ PATCHLEVEL = 2
+ SUBLEVEL = 8
+-EXTRAVERSION =
++EXTRAVERSION = -HCBS
+ NAME = Bobtail Squid
  
  # *DOCUMENTATION*
 -- 
-2.19.1
+2.20.1
 

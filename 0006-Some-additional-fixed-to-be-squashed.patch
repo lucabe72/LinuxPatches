@@ -1,4 +1,4 @@
-From 7b614b042c4c9d88ec3cec18e344f13ee157a0dc Mon Sep 17 00:00:00 2001
+From ab9c1fe7d0f23ea1fc67bcf8a794b22a8eada1e0 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Fri, 29 Jun 2018 00:07:54 +0200
 Subject: [PATCH 6/9] Some additional fixed to be squashed
@@ -21,7 +21,7 @@ index f9c011e00d1d..d98e144ab8f6 100644
  
  		raw_spin_unlock(&rq->lock);
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index d73fa356872e..31b32f6a573f 100644
+index e90e4cab2b47..05d361024fd4 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -45,18 +45,17 @@ void free_rt_sched_group(struct task_group *tg)
@@ -70,5 +70,5 @@ index d73fa356872e..31b32f6a573f 100644
  	}
  }
 -- 
-2.19.1
+2.20.1
 

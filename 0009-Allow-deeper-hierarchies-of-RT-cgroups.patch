@@ -1,4 +1,4 @@
-From 3dd41db452332d993817d5b1ebe361cb5c699dbe Mon Sep 17 00:00:00 2001
+From 2f5c0458419053fd5c3d1c1965133f42a6606fff Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Thu, 25 Jan 2018 12:22:21 +0100
 Subject: [PATCH 9/9] Allow deeper hierarchies of RT cgroups
@@ -13,10 +13,10 @@ The basic rule is that:
  2 files changed, 26 insertions(+), 7 deletions(-)
 
 diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index 56faa287c2ce..ea061320a66a 100644
+index e57d8eacca69..87b1f544646a 100644
 --- a/kernel/sched/core.c
 +++ b/kernel/sched/core.c
-@@ -4248,6 +4248,10 @@ static int __sched_setscheduler(struct task_struct *p,
+@@ -4249,6 +4249,10 @@ static int __sched_setscheduler(struct task_struct *p,
  
  	if (user) {
  #ifdef CONFIG_RT_GROUP_SCHED
@@ -27,7 +27,7 @@ index 56faa287c2ce..ea061320a66a 100644
  		/*
  		 * Do not allow realtime tasks into groups that have no runtime
  		 * assigned.
-@@ -6407,12 +6411,6 @@ cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
+@@ -6408,12 +6412,6 @@ cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
  		return &root_task_group.css;
  	}
  
@@ -41,7 +41,7 @@ index 56faa287c2ce..ea061320a66a 100644
  	if (IS_ERR(tg))
  		return ERR_PTR(-ENOMEM);
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 12cec8480f8f..a4528553baa2 100644
+index 8087a3e821bf..2a45a1cd49e6 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
 @@ -2051,6 +2051,14 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
@@ -59,7 +59,7 @@ index 12cec8480f8f..a4528553baa2 100644
  	/* No period doesn't make any sense. */
  	if (rt_period == 0)
  		return -EINVAL;
-@@ -2138,11 +2146,24 @@ static int sched_rt_global_constraints(void)
+@@ -2143,11 +2151,24 @@ static int sched_rt_global_constraints(void)
  
  int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk)
  {
@@ -86,5 +86,5 @@ index 12cec8480f8f..a4528553baa2 100644
  
  #else /* !CONFIG_RT_GROUP_SCHED */
 -- 
-2.19.1
+2.20.1
 
