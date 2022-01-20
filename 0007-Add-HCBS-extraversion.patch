@@ -1,25 +1,25 @@
-From 4c23916fee3015444dcab2c68a981d59a0ad50be Mon Sep 17 00:00:00 2001
+From 642391d37ad7e93b459bd22c5b16dc3a689be43f Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Tue, 16 Jan 2018 11:42:28 +0100
-Subject: [PATCH 8/9] Add HCBS extraversion
+Subject: [PATCH 07/10] Add HCBS extraversion
 
 ---
  Makefile | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/Makefile b/Makefile
-index bad87c4c8117..b44de6cd6404 100644
+index 24a4c1b97..bc1fcc22e 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -2,7 +2,7 @@
  VERSION = 5
- PATCHLEVEL = 2
- SUBLEVEL = 8
+ PATCHLEVEL = 8
+ SUBLEVEL = 0
 -EXTRAVERSION =
-+EXTRAVERSION = -HCBS
- NAME = Bobtail Squid
++EXTRAVERSION = -hcbs
+ NAME = Kleptomaniac Octopus
  
  # *DOCUMENTATION*
 -- 
-2.20.1
+2.25.1
 

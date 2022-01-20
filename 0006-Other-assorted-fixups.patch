@@ -1,19 +1,19 @@
-From 0be77b4d42ffe85515ccfa8af37ef6c753c14edd Mon Sep 17 00:00:00 2001
+From 1941fc5e9f2f20e552b333d116f67e5cc62a22fe Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Wed, 24 Jan 2018 12:50:07 +0100
-Subject: [PATCH 7/9] Other assorted fixups
+Subject: [PATCH 06/10] Other assorted fixups
 
 Again, to be split / merged in previous patches
 ---
- kernel/sched/deadline.c | 20 ++++++++++++--------
+ kernel/sched/deadline.c | 19 ++++++++++++-------
  kernel/sched/rt.c       | 10 ++++++++--
- 2 files changed, 20 insertions(+), 10 deletions(-)
+ 2 files changed, 20 insertions(+), 9 deletions(-)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index d98e144ab8f6..70743935f4af 100644
+index ef7e108c5..44562bbaa 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
-@@ -195,22 +195,26 @@ int dl_check_tg(unsigned long total)
+@@ -195,22 +195,27 @@ int dl_check_tg(unsigned long total)
  int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period)
  {
  	struct rq *rq = container_of(dl_rq_of_se(dl_se), struct rq, dl);
@@ -26,16 +26,16 @@ index d98e144ab8f6..70743935f4af 100644
  	dl_se->dl_period   = rt_period;
  	dl_se->dl_deadline = dl_se->dl_period;
 +	if (is_active) {
-+		sub_running_bw(dl_se, dl_rq_of_se(dl_se));
++		__sub_running_bw(dl_se->dl_bw, dl_rq_of_se(dl_se));
 +	} else if (dl_se->dl_non_contending) {
-+		sub_running_bw(dl_se, dl_rq_of_se(dl_se));
++		__sub_running_bw(dl_se->dl_bw, dl_rq_of_se(dl_se));
 +		dl_se->dl_non_contending = 0;
 +		hrtimer_try_to_cancel(&dl_se->inactive_timer);
 +	}
- 	sub_rq_bw(dl_se, dl_rq_of_se(dl_se));
+ 	__sub_rq_bw(dl_se->dl_bw, dl_rq_of_se(dl_se));
  	dl_se->dl_bw = to_ratio(dl_se->dl_period, dl_se->dl_runtime);
- 	add_rq_bw(dl_se, dl_rq_of_se(dl_se));
--
+ 	__add_rq_bw(dl_se->dl_bw, dl_rq_of_se(dl_se));
+ 
 -	/* ??? FIX THIS CRAP! ??? */
 -	if (!((s64)(rt_period - rt_runtime) >= 0) ||
 -	    !(rt_runtime >= (2 << (DL_SCALE - 1)))) {
@@ -44,15 +44,15 @@ index d98e144ab8f6..70743935f4af 100644
 -		return 0;
 -	}
 +	if (is_active)
-+		add_running_bw(dl_se, dl_rq_of_se(dl_se));
++		__add_running_bw(dl_se->dl_bw, dl_rq_of_se(dl_se));
  
  	raw_spin_unlock_irq(&rq->lock);
  
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 05d361024fd4..8087a3e821bf 100644
+index 71bd8400c..ecd32708f 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
-@@ -2025,6 +2025,13 @@ static int __rt_schedulable(struct task_group *tg, u64 period, u64 runtime)
+@@ -2091,6 +2091,13 @@ static int __rt_schedulable(struct task_group *tg, u64 period, u64 runtime)
  		.rt_runtime = runtime,
  	};
  
@@ -66,7 +66,7 @@ index 05d361024fd4..8087a3e821bf 100644
  	rcu_read_lock();
  	ret = walk_tg_tree(tg_rt_schedulable, tg_nop, &data);
  	rcu_read_unlock();
-@@ -2062,8 +2069,7 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
+@@ -2133,8 +2140,7 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
  		goto unlock_bandwidth;
  
  	for_each_possible_cpu(i) {
@@ -77,5 +77,5 @@ index 05d361024fd4..8087a3e821bf 100644
  unlock_bandwidth:
  	raw_spin_unlock_irq(&tg->dl_bandwidth.dl_runtime_lock);
 -- 
-2.20.1
+2.25.1
 

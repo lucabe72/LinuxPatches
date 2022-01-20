@@ -1,7 +1,7 @@
-From dbb24b4a9a7afb50c02215640e272bd58887251a Mon Sep 17 00:00:00 2001
+From 9f76fb7f39ccb1ae5a1e4db13e9e4acbc8fee5e3 Mon Sep 17 00:00:00 2001
 From: luca abeni <luca.abeni@santannapisa.it>
 Date: Wed, 17 Apr 2019 13:28:01 +0200
-Subject: [PATCH 3/9] sched/rt: DL-RT group migration from throttled rq
+Subject: [PATCH 03/10] sched/rt: DL-RT group migration from throttled rq
 
 When the runtime is exhausted in a RT CGroup, the scheduler checks for
 another non-throttled runqueue and, if available, migrates the tasks.
@@ -20,13 +20,13 @@ Cc: Ingo Molnar <mingo@redhat.com>
 Cc: Peter Zijlstra <peterz@infradead.org>
 Signed-off-by: Alessio Balsini <a.balsini@sssup.it>
 ---
- kernel/sched/deadline.c | 212 ++++++++++++++++++++++++++++++++++++----
- kernel/sched/rt.c       | 192 +++++++++++++++++++++++++++++++++---
- kernel/sched/sched.h    |   9 ++
- 3 files changed, 382 insertions(+), 31 deletions(-)
+ kernel/sched/deadline.c | 184 ++++++++++++++++++++++++++++++++++----
+ kernel/sched/rt.c       | 192 +++++++++++++++++++++++++++++++++++++---
+ kernel/sched/sched.h    |  13 +++
+ 3 files changed, 360 insertions(+), 29 deletions(-)
 
 diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
-index e5a82ec729b1..82db41624719 100644
+index 242224b16..05f595d8f 100644
 --- a/kernel/sched/deadline.c
 +++ b/kernel/sched/deadline.c
 @@ -39,6 +39,14 @@ static inline struct rq *rq_of_dl_rq(struct dl_rq *dl_rq)
@@ -52,34 +52,7 @@ index e5a82ec729b1..82db41624719 100644
  
  static inline int on_dl_rq(struct sched_dl_entity *dl_se)
  {
-@@ -162,6 +171,26 @@ void sub_running_bw(struct sched_dl_entity *dl_se, struct dl_rq *dl_rq)
- 		__sub_running_bw(dl_se->dl_bw, dl_rq);
- }
- 
-+int dl_check_tg(unsigned long total)
-+{
-+	unsigned long flags;
-+	int cpus = num_online_cpus();
-+	struct dl_bw *dl_b = dl_bw_of(smp_processor_id());
-+
-+	raw_spin_lock_irqsave(&dl_b->lock, flags);
-+
-+	if (dl_b->bw != -1 &&
-+	    dl_b->bw * cpus < dl_b->total_bw + total * cpus) {
-+		raw_spin_unlock_irqrestore(&dl_b->lock, flags);
-+
-+		return 0;
-+	}
-+
-+	raw_spin_unlock_irqrestore(&dl_b->lock, flags);
-+
-+	return 1;
-+}
-+
- void dl_change_utilization(struct task_struct *p, u64 new_bw)
- {
- 	struct rq *rq;
-@@ -416,7 +445,11 @@ static inline void dl_clear_overload(struct rq *rq)
+@@ -438,7 +447,11 @@ static inline void dl_clear_overload(struct rq *rq)
  
  static void update_dl_migration(struct dl_rq *dl_rq)
  {
@@ -91,7 +64,7 @@ index e5a82ec729b1..82db41624719 100644
  		if (!dl_rq->overloaded) {
  			dl_set_overload(rq_of_dl_rq(dl_rq));
  			dl_rq->overloaded = 1;
-@@ -520,6 +553,61 @@ static DEFINE_PER_CPU(struct callback_head, dl_pull_head);
+@@ -542,6 +555,61 @@ static DEFINE_PER_CPU(struct callback_head, dl_pull_head);
  static void push_dl_tasks(struct rq *);
  static void pull_dl_task(struct rq *);
  
@@ -153,7 +126,7 @@ index e5a82ec729b1..82db41624719 100644
  static inline void deadline_queue_push_tasks(struct rq *rq)
  {
  	if (!has_pushable_dl_tasks(rq))
-@@ -960,10 +1048,46 @@ static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
+@@ -1015,10 +1083,46 @@ static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
  	struct sched_dl_entity *dl_se = container_of(timer,
  						     struct sched_dl_entity,
  						     dl_timer);
@@ -201,7 +174,7 @@ index e5a82ec729b1..82db41624719 100644
  	rq = task_rq_lock(p, &rf);
  
  	/*
-@@ -1326,29 +1450,39 @@ static inline void dec_dl_deadline(struct dl_rq *dl_rq, u64 deadline) {}
+@@ -1381,29 +1485,39 @@ static inline void dec_dl_deadline(struct dl_rq *dl_rq, u64 deadline) {}
  static inline
  void inc_dl_tasks(struct sched_dl_entity *dl_se, struct dl_rq *dl_rq)
  {
@@ -252,7 +225,7 @@ index e5a82ec729b1..82db41624719 100644
  }
  
  static void __enqueue_dl_entity(struct sched_dl_entity *dl_se)
-@@ -1375,6 +1509,9 @@ static void __enqueue_dl_entity(struct sched_dl_entity *dl_se)
+@@ -1430,6 +1544,9 @@ static void __enqueue_dl_entity(struct sched_dl_entity *dl_se)
  	rb_link_node(&dl_se->rb_node, parent, link);
  	rb_insert_color_cached(&dl_se->rb_node, &dl_rq->root, leftmost);
  
@@ -262,7 +235,7 @@ index e5a82ec729b1..82db41624719 100644
  	inc_dl_tasks(dl_se, dl_rq);
  }
  
-@@ -1389,6 +1526,9 @@ static void __dequeue_dl_entity(struct sched_dl_entity *dl_se)
+@@ -1444,6 +1561,9 @@ static void __dequeue_dl_entity(struct sched_dl_entity *dl_se)
  	RB_CLEAR_NODE(&dl_se->rb_node);
  
  	dec_dl_tasks(dl_se, dl_rq);
@@ -272,24 +245,10 @@ index e5a82ec729b1..82db41624719 100644
  }
  
  void
-@@ -1729,14 +1869,35 @@ pick_next_task_dl(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
- 	if (prev->sched_class == &dl_sched_class)
- 		update_curr_dl(rq);
- 
-+#ifdef CONFIG_RT_GROUP_SCHED
-+	if (unlikely(!dl_rq->dl_nr_total))
-+		return NULL;
-+#else
- 	if (unlikely(!dl_rq->dl_nr_running))
- 		return NULL;
--
--	put_prev_task(rq, prev);
-+#endif
+@@ -1787,6 +1907,23 @@ static struct task_struct *pick_next_task_dl(struct rq *rq)
  
  	dl_se = pick_next_dl_entity(rq, dl_rq);
  	BUG_ON(!dl_se);
- 
-+	put_prev_task(rq, prev);
 +
 +	if (!dl_entity_is_task(dl_se)) {
 +		struct rt_rq *rt_rq = rt_rq_of_dl_entity(dl_se);
@@ -308,9 +267,9 @@ index e5a82ec729b1..82db41624719 100644
 +	}
 +
  	p = dl_task_of(dl_se);
- 
- 	set_next_task(rq, p);
-@@ -2191,14 +2352,21 @@ static void pull_dl_task(struct rq *this_rq)
+ 	set_next_task_dl(rq, p, true);
+ 	return p;
+@@ -2218,14 +2355,21 @@ static void pull_dl_task(struct rq *this_rq)
   */
  static void task_woken_dl(struct rq *rq, struct task_struct *p)
  {
@@ -336,7 +295,7 @@ index e5a82ec729b1..82db41624719 100644
  }
  
  static void set_cpus_allowed_dl(struct task_struct *p,
-@@ -2304,10 +2472,15 @@ static void switched_from_dl(struct rq *rq, struct task_struct *p)
+@@ -2361,10 +2505,15 @@ static void switched_from_dl(struct rq *rq, struct task_struct *p)
  	 * this is the right place to try to pull some other one
  	 * from an overloaded CPU, if any.
  	 */
@@ -352,7 +311,7 @@ index e5a82ec729b1..82db41624719 100644
  }
  
  /*
-@@ -2639,6 +2812,9 @@ void __dl_clear_params(struct task_struct *p)
+@@ -2698,6 +2847,9 @@ void __dl_clear_params(struct task_struct *p)
  	dl_se->dl_yielded		= 0;
  	dl_se->dl_non_contending	= 0;
  	dl_se->dl_overrun		= 0;
@@ -363,10 +322,10 @@ index e5a82ec729b1..82db41624719 100644
  
  bool dl_param_changed(struct task_struct *p, const struct sched_attr *attr)
 diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
-index 47bddcfbfd49..e09cccc9c592 100644
+index f5c412bdd..4a753202e 100644
 --- a/kernel/sched/rt.c
 +++ b/kernel/sched/rt.c
-@@ -907,6 +907,14 @@ static void put_prev_task_rt(struct rq *rq, struct task_struct *p)
+@@ -954,6 +954,14 @@ static void put_prev_task_rt(struct rq *rq, struct task_struct *p)
  	 */
  	if (on_rt_rq(&p->rt) && p->nr_cpus_allowed > 1)
  		enqueue_pushable_task(rt_rq, p);
@@ -381,7 +340,7 @@ index 47bddcfbfd49..e09cccc9c592 100644
  }
  
  #ifdef CONFIG_SMP
-@@ -1462,16 +1470,173 @@ static void pull_rt_task(struct rq *this_rq)
+@@ -1525,16 +1533,173 @@ static void pull_rt_task(struct rq *this_rq)
  }
  
  #ifdef CONFIG_RT_GROUP_SCHED
@@ -428,7 +387,7 @@ index 47bddcfbfd49..e09cccc9c592 100644
 +			}
 +
 +			if (unlikely(!cpumask_test_cpu(first_rq->cpu,
-+						&task->cpus_allowed) ||
++						task->cpus_ptr) ||
 +			    first_dl_se->dl_throttled)) {
 +				double_unlock_balance(rq, first_rq);
 +
@@ -556,7 +515,7 @@ index 47bddcfbfd49..e09cccc9c592 100644
  void group_push_rt_tasks(struct rt_rq *rt_rq)
  {
  	while (group_push_rt_task(rt_rq))
-@@ -1537,9 +1702,10 @@ static void switched_from_rt(struct rq *rq, struct task_struct *p)
+@@ -1601,9 +1766,10 @@ static void switched_from_rt(struct rq *rq, struct task_struct *p)
  	if (!task_on_rq_queued(p) || rt_rq->rt_nr_running)
  		return;
  
@@ -570,7 +529,7 @@ index 47bddcfbfd49..e09cccc9c592 100644
  }
  
  void __init init_sched_rt_class(void)
-@@ -1569,16 +1735,14 @@ static void switched_to_rt(struct rq *rq, struct task_struct *p)
+@@ -1633,16 +1799,14 @@ static void switched_to_rt(struct rq *rq, struct task_struct *p)
  	 */
  	if (task_on_rq_queued(p) && rq->curr != p) {
  #ifdef CONFIG_SMP
@@ -590,7 +549,7 @@ index 47bddcfbfd49..e09cccc9c592 100644
  #endif /* CONFIG_SMP */
  		if (p->prio < rq->curr->prio && cpu_online(cpu_of(rq)))
  			resched_curr(rq);
-@@ -1605,10 +1769,12 @@ prio_changed_rt(struct rq *rq, struct task_struct *p, int oldprio)
+@@ -1669,10 +1833,12 @@ prio_changed_rt(struct rq *rq, struct task_struct *p, int oldprio)
  		 * If our priority decreases while running, we
  		 * may need to pull tasks to this runqueue.
  		 */
@@ -608,10 +567,22 @@ index 47bddcfbfd49..e09cccc9c592 100644
  		/*
  		 * If there's a higher priority task waiting to run
 diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
-index c2187e83dd59..af7e92cbc4e3 100644
+index e1e5d4c88..ddc2a147d 100644
 --- a/kernel/sched/sched.h
 +++ b/kernel/sched/sched.h
-@@ -2406,6 +2406,15 @@ int group_pull_rt_task(struct rt_rq *rt_rq);
+@@ -1833,7 +1833,11 @@ static inline bool sched_stop_runnable(struct rq *rq)
+ 
+ static inline bool sched_dl_runnable(struct rq *rq)
+ {
++#ifdef CONFIG_RT_GROUP_SCHED
++	return rq->dl.dl_nr_total > 0;
++#else
+ 	return rq->dl.dl_nr_running > 0;
++#endif
+ }
+ 
+ static inline bool sched_rt_runnable(struct rq *rq)
+@@ -2608,6 +2612,15 @@ int group_pull_rt_task(struct rt_rq *rt_rq);
  int group_push_rt_task(struct rt_rq *rt_rq);
  
  struct sched_rt_entity *pick_next_rt_entity(struct rq *rq, struct rt_rq *rt_rq);
@@ -628,5 +599,5 @@ index c2187e83dd59..af7e92cbc4e3 100644
  void dequeue_pushable_task(struct rt_rq *rt_rq, struct task_struct *p);
  #else
 -- 
-2.20.1
+2.25.1
 
