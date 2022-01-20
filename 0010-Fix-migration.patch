@@ -1,0 +1,27 @@
+From e6ce70032616e8cf4d7e641740538cb8cb87adf9 Mon Sep 17 00:00:00 2001
+From: luca abeni <luca.abeni@santannapisa.it>
+Date: Tue, 18 Jan 2022 09:24:00 +0100
+Subject: [PATCH 10/10] Fix migration
+
+Affinities were not respected...
+---
+ kernel/sched/rt.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
+index d8054cf7a..59e8ad0ee 100644
+--- a/kernel/sched/rt.c
++++ b/kernel/sched/rt.c
+@@ -1563,7 +1563,8 @@ struct rt_rq *group_find_lock_rt_rq(struct task_struct *task,
+ 			continue;
+ 		}
+ 
+-		if (first_dl_se->dl_throttled) {
++		if (unlikely(!cpumask_test_cpu(first_rq->cpu, task->cpus_ptr) ||
++					first_dl_se->dl_throttled)) {
+ 			first_rt_rq = NULL;
+ 			continue;
+ 		}
+-- 
+2.25.1
+

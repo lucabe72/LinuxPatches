@@ -1,0 +1,35 @@
+From 7dd9cd98872027412efb0629a87a7b67ee9178a3 Mon Sep 17 00:00:00 2001
+From: luca abeni <luca.abeni@santannapisa.it>
+Date: Tue, 18 Jan 2022 09:23:49 +0100
+Subject: [PATCH 09/10] Add cgroup2 support
+
+---
+ kernel/sched/core.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 3bac2334b..27ae3d3f1 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -8055,6 +8055,18 @@ static struct cftype cpu_files[] = {
+ 		.seq_show = cpu_uclamp_max_show,
+ 		.write = cpu_uclamp_max_write,
+ 	},
++#endif
++#ifdef CONFIG_RT_GROUP_SCHED
++	{
++		.name = "rt_runtime_us",
++		.read_s64 = cpu_rt_runtime_read,
++		.write_s64 = cpu_rt_runtime_write,
++	},
++	{
++		.name = "rt_period_us",
++		.read_u64 = cpu_rt_period_read_uint,
++		.write_u64 = cpu_rt_period_write_uint,
++	},
+ #endif
+ 	{ }	/* terminate */
+ };
+-- 
+2.25.1
+
