@@ -1,0 +1,144 @@
+From ce8d9ecbb1e5c439640a527a7f5256095524b4a9 Mon Sep 17 00:00:00 2001
+From: luca abeni <luca.abeni@santannapisa.it>
+Date: Mon, 21 Sep 2020 15:09:10 +0200
+Subject: [PATCH 04/15] Move some inline functions from rt.c to sched.h
+
+So that they can be used in core.c too...
+Again, this is in preparation for hierarchical scheduling.
+---
+ kernel/sched/rt.c    | 49 ------------------------------------------
+ kernel/sched/sched.h | 51 ++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 51 insertions(+), 49 deletions(-)
+
+diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
+index b20facd2f..8d8a27511 100644
+--- a/kernel/sched/rt.c
++++ b/kernel/sched/rt.c
+@@ -167,31 +167,6 @@ static void destroy_rt_bandwidth(struct rt_bandwidth *rt_b)
+ 
+ #define rt_entity_is_task(rt_se) (!(rt_se)->my_q)
+ 
+-static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)
+-{
+-#ifdef CONFIG_SCHED_DEBUG
+-	WARN_ON_ONCE(!rt_entity_is_task(rt_se));
+-#endif
+-	return container_of(rt_se, struct task_struct, rt);
+-}
+-
+-static inline struct rq *rq_of_rt_rq(struct rt_rq *rt_rq)
+-{
+-	return rt_rq->rq;
+-}
+-
+-static inline struct rt_rq *rt_rq_of_se(struct sched_rt_entity *rt_se)
+-{
+-	return rt_se->rt_rq;
+-}
+-
+-static inline struct rq *rq_of_rt_se(struct sched_rt_entity *rt_se)
+-{
+-	struct rt_rq *rt_rq = rt_se->rt_rq;
+-
+-	return rt_rq->rq;
+-}
+-
+ void unregister_rt_sched_group(struct task_group *tg)
+ {
+ 	if (tg->rt_se)
+@@ -283,30 +258,6 @@ int alloc_rt_sched_group(struct task_group *tg, struct task_group *parent)
+ 
+ #define rt_entity_is_task(rt_se) (1)
+ 
+-static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)
+-{
+-	return container_of(rt_se, struct task_struct, rt);
+-}
+-
+-static inline struct rq *rq_of_rt_rq(struct rt_rq *rt_rq)
+-{
+-	return container_of(rt_rq, struct rq, rt);
+-}
+-
+-static inline struct rq *rq_of_rt_se(struct sched_rt_entity *rt_se)
+-{
+-	struct task_struct *p = rt_task_of(rt_se);
+-
+-	return task_rq(p);
+-}
+-
+-static inline struct rt_rq *rt_rq_of_se(struct sched_rt_entity *rt_se)
+-{
+-	struct rq *rq = rq_of_rt_se(rt_se);
+-
+-	return &rq->rt;
+-}
+-
+ void unregister_rt_sched_group(struct task_group *tg) { }
+ 
+ void free_rt_sched_group(struct task_group *tg) { }
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+index 24f1d8644..23e233587 100644
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -3138,6 +3138,57 @@ static inline void double_rq_unlock(struct rq *rq1, struct rq *rq2)
+ 
+ #endif /* !CONFIG_SMP */
+ 
++#ifdef CONFIG_RT_GROUP_SCHED
++static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)
++{
++#ifdef CONFIG_SCHED_DEBUG
++	WARN_ON_ONCE(rt_se->my_q);
++#endif
++	return container_of(rt_se, struct task_struct, rt);
++}
++
++static inline struct rq *rq_of_rt_rq(struct rt_rq *rt_rq)
++{
++	return rt_rq->rq;
++}
++
++static inline struct rt_rq *rt_rq_of_se(struct sched_rt_entity *rt_se)
++{
++	return rt_se->rt_rq;
++}
++
++static inline struct rq *rq_of_rt_se(struct sched_rt_entity *rt_se)
++{
++	struct rt_rq *rt_rq = rt_se->rt_rq;
++
++	return rt_rq->rq;
++}
++#else
++static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)
++{
++	return container_of(rt_se, struct task_struct, rt);
++}
++
++static inline struct rq *rq_of_rt_rq(struct rt_rq *rt_rq)
++{
++	return container_of(rt_rq, struct rq, rt);
++}
++
++static inline struct rq *rq_of_rt_se(struct sched_rt_entity *rt_se)
++{
++	struct task_struct *p = rt_task_of(rt_se);
++
++	return task_rq(p);
++}
++
++static inline struct rt_rq *rt_rq_of_se(struct sched_rt_entity *rt_se)
++{
++	struct rq *rq = rq_of_rt_se(rt_se);
++
++	return &rq->rt;
++}
++#endif
++
+ DEFINE_LOCK_GUARD_2(double_rq_lock, struct rq,
+ 		    double_rq_lock(_T->lock, _T->lock2),
+ 		    double_rq_unlock(_T->lock, _T->lock2))
+-- 
+2.49.0
+

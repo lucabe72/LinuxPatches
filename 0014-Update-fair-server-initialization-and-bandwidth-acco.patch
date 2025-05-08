@@ -1,0 +1,109 @@
+From 9b0ab432ba936a7c8b92dbab1b976d36861aab43 Mon Sep 17 00:00:00 2001
+From: Yuri Andriaccio <yurand2000@gmail.com>
+Date: Tue, 7 Jan 2025 23:04:43 +0100
+Subject: [PATCH 14/15] Update fair server initialization and bandwidth
+ accounting
+
+fair_dl_server_apply_params is used to initialize the fair_servers. Fair servers should
+not be accounted in the bandwidth for real-time tasks, rather they are assigned to the
+remainder of the bandwidth not assigned to real-time tasks. The fuction does not make
+use of __dl_overflow, i.e. the bandwidth accounting check for real-time tasks.
+Additionally, the fair server has assigned the correct remainder bandwidth instead of
+the fixed 5%.
+---
+ kernel/sched/deadline.c | 36 ++++++++++++++++++++++++++++++++----
+ 1 file changed, 32 insertions(+), 4 deletions(-)
+
+diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
+index e43c9cda9..0eed61314 100644
+--- a/kernel/sched/deadline.c
++++ b/kernel/sched/deadline.c
+@@ -240,13 +240,15 @@ static inline bool
+ __dl_overflow(struct dl_bw *dl_b, unsigned long cap, u64 old_bw, u64 new_bw)
+ {
+ 	u64 dl_groups_root = 0;
++	u64 dl_fair_bw = to_ratio(global_rt_period(), global_rt_period() - global_rt_runtime());
+ 
+ #ifdef CONFIG_RT_GROUP_SCHED
+ 	dl_groups_root = to_ratio(root_task_group.dl_bandwidth.dl_period,
+ 				  root_task_group.dl_bandwidth.dl_runtime);
+ #endif
++
+ 	return dl_b->bw != -1 &&
+-	       cap_scale(dl_b->bw, cap) < dl_b->total_bw - old_bw + new_bw
++	       cap_scale(dl_b->bw + dl_fair_bw, cap) < dl_b->total_bw - old_bw + new_bw
+ 					+ cap_scale(dl_groups_root, cap);
+ }
+ 
+@@ -361,6 +363,7 @@ int dl_check_tg(unsigned long total)
+ 	int cpus;
+ 	struct dl_bw *dl_b;
+ 	u64 gen = ++dl_generation;
++	u64 dl_fair_bw = to_ratio(global_rt_period(), global_rt_period() - global_rt_runtime());
+ 
+ 	for_each_possible_cpu(which_cpu) {
+ 		rcu_read_lock_sched();
+@@ -372,7 +375,8 @@ int dl_check_tg(unsigned long total)
+ 			raw_spin_lock_irqsave(&dl_b->lock, flags);
+ 
+ 			if (dl_b->bw != -1 &&
+-			    dl_b->bw * cpus < dl_b->total_bw + total * cpus) {
++			    (dl_b->bw + dl_fair_bw) * cpus < dl_b->total_bw + total * cpus) {
++
+ 				raw_spin_unlock_irqrestore(&dl_b->lock, flags);
+ 				rcu_read_unlock_sched();
+ 
+@@ -1742,6 +1746,8 @@ void dl_server_update(struct sched_dl_entity *dl_se, s64 delta_exec)
+ 		update_curr_dl_se(rq_of_dl_se(dl_se), dl_se, delta_exec);
+ }
+ 
++void fair_dl_server_apply_params(struct sched_dl_entity *dl_se, u64 runtime_ns, u64 period_ns, bool init);
++
+ void dl_server_start(struct sched_dl_entity *dl_se)
+ {
+ 	struct rq *rq;
+@@ -1754,10 +1760,11 @@ void dl_server_start(struct sched_dl_entity *dl_se)
+ 	if (!dl_server(dl_se)) {
+ 		dl_se->dl_server = 1;
+ 		if (dl_se == &rq_of_dl_se(dl_se)->fair_server) {
+-			u64 runtime =  50 * NSEC_PER_MSEC;
++			u64 dl_server_runtime = global_rt_period() - global_rt_runtime();
++			u64 runtime = 1000 * NSEC_PER_MSEC * dl_server_runtime / global_rt_period(); // overflow?
+ 			u64 period = 1000 * NSEC_PER_MSEC;
+ 
+-			BUG_ON(dl_server_apply_params(dl_se, runtime, period, 1));
++			fair_dl_server_apply_params(dl_se, runtime, period, 1);
+ 
+ 			dl_se->dl_defer = 1;
+ 		}
+@@ -1856,6 +1863,27 @@ int dl_server_apply_params(struct sched_dl_entity *dl_se, u64 runtime, u64 perio
+ 	return retval;
+ }
+ 
++void fair_dl_server_apply_params(struct sched_dl_entity *dl_se, u64 runtime, u64 period, bool init) {
++	u64 new_bw = to_ratio(period, runtime);
++	struct rq *rq = rq_of_dl_se(dl_se);
++
++	if (init) {
++		__add_rq_bw(new_bw, &rq->dl);
++	} else {
++		dl_rq_change_utilization(rq, dl_se, new_bw);
++	}
++
++	dl_se->dl_runtime = runtime;
++	dl_se->dl_deadline = period;
++	dl_se->dl_period = period;
++
++	dl_se->runtime = 0;
++	dl_se->deadline = 0;
++
++	dl_se->dl_bw = to_ratio(dl_se->dl_period, dl_se->dl_runtime);
++	dl_se->dl_density = to_ratio(dl_se->dl_deadline, dl_se->dl_runtime);
++}
++
+ /*
+  * Update the current task's runtime statistics (provided it is still
+  * a -deadline task and has not been removed from the dl_rq).
+-- 
+2.49.0
+

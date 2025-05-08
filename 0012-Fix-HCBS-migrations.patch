@@ -1,0 +1,33 @@
+From 32a16f788ad97ad56833d139fb3abb8d2d645844 Mon Sep 17 00:00:00 2001
+From: luca abeni <luca.abeni@santannapisa.it>
+Date: Fri, 17 Jan 2025 15:44:43 +0100
+Subject: [PATCH 12/15] Fix HCBS migrations
+
+Do not unthrottle a dl entity in stop_dl_entity(), since it ends up
+being stopped when throttled (we try to migrate all the RT tasks away
+from it).
+
+TODO: check if this breaks dl server for fair tasks
+---
+ kernel/sched/deadline.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
+index d993f196c..e43c9cda9 100644
+--- a/kernel/sched/deadline.c
++++ b/kernel/sched/deadline.c
+@@ -1781,9 +1781,9 @@ void dl_server_stop(struct sched_dl_entity *dl_se)
+ 		return;
+ 
+ 	dequeue_dl_entity(dl_se, DEQUEUE_SLEEP);
+-	hrtimer_try_to_cancel(&dl_se->dl_timer);
++	//hrtimer_try_to_cancel(&dl_se->dl_timer);
+ 	dl_se->dl_defer_armed = 0;
+-	dl_se->dl_throttled = 0;
++	//dl_se->dl_throttled = 0;
+ 	dl_se->dl_server_active = 0;
+ }
+ 
+-- 
+2.49.0
+

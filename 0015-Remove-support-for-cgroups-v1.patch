@@ -1,0 +1,136 @@
+From 9b5467fc005ce2aa0bd6a7216cfd7332e9d41007 Mon Sep 17 00:00:00 2001
+From: Yuri Andriaccio <yurand2000@gmail.com>
+Date: Wed, 30 Apr 2025 10:32:12 +0200
+Subject: [PATCH 15/15] Remove support for cgroups v1
+
+Disable control files for cgroups v1, only cgroups v2 is allowed.
+Since the runtime allocated to rt-cgroups cannot be changed when using cgroups v1,
+it is now set by default to zero. The bandwidth is therefore reserved only for SCHED_DEADLINE tasks.
+
+Since the runtime is now zero by default, it must be allowed to turn on/off the
+root_control_group, i.e. setting its runtime to zero and completely disallow rt-cgroups.
+This specific check is removed in tg_rt_schedulable. Other changes affect the scheduling
+policy change and attaching FIFO/RR task to rt-cgroups.
+
+Disabling the root control group bandwidth should not cause any issue,
+as SCHED_FIFO/SCHED_RR tasks do not depend on it since the introduction of fair_servers.
+---
+ kernel/sched/core.c     | 16 ++--------------
+ kernel/sched/rt.c       | 24 +++++++++---------------
+ kernel/sched/syscalls.c |  6 +-----
+ 3 files changed, 12 insertions(+), 34 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 799f51294..5a1389d0d 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -8537,7 +8537,7 @@ void __init sched_init(void)
+ 
+ #ifdef CONFIG_RT_GROUP_SCHED
+ 	init_dl_bandwidth(&root_task_group.dl_bandwidth,
+-			global_rt_period(), global_rt_runtime());
++			global_rt_period(), 0);
+ #endif /* CONFIG_RT_GROUP_SCHED */
+ 
+ #ifdef CONFIG_CGROUP_SCHED
+@@ -9174,7 +9174,7 @@ static int cpu_cgroup_can_attach(struct cgroup_taskset *tset)
+ 	struct cgroup_subsys_state *css;
+ 
+ 	cgroup_taskset_for_each(task, css, tset) {
+-		if (!sched_rt_can_attach(css_tg(css), task))
++		if (rt_task(task) && !sched_rt_can_attach(css_tg(css), task))
+ 			return -EINVAL;
+ 	}
+ #endif
+@@ -9830,18 +9830,6 @@ static struct cftype cpu_legacy_files[] = {
+ 		.seq_show = cpu_cfs_local_stat_show,
+ 	},
+ #endif
+-#ifdef CONFIG_RT_GROUP_SCHED
+-	{
+-		.name = "rt_runtime_us",
+-		.read_s64 = cpu_rt_runtime_read,
+-		.write_s64 = cpu_rt_runtime_write,
+-	},
+-	{
+-		.name = "rt_period_us",
+-		.read_u64 = cpu_rt_period_read_uint,
+-		.write_u64 = cpu_rt_period_write_uint,
+-	},
+-#endif
+ #ifdef CONFIG_UCLAMP_TASK_GROUP
+ 	{
+ 		.name = "uclamp.min",
+diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
+index e3937655e..ce359222e 100644
+--- a/kernel/sched/rt.c
++++ b/kernel/sched/rt.c
+@@ -2422,13 +2422,6 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
+ {
+ 	int i, err = 0;
+ 
+-	/*
+-	 * Disallowing the root group RT runtime is BAD, it would disallow the
+-	 * kernel creating (and or operating) RT threads.
+-	 */
+-	if (tg == &root_task_group && rt_runtime == 0)
+-		return -EINVAL;
+-
+ 	/*
+ 	 * Do not allow to set a RT runtime > 0 if the parent has RT tasks
+ 	 * (and is not the root group)
+@@ -2530,20 +2523,21 @@ static int sched_rt_global_constraints(void)
+ 
+ int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk)
+ {
++	struct task_group *child;
+ 	int can_attach = 1;
+ 
++	/* Allow executing in the root cgroup regardless of allowed bandwidth */
++	if (tg == &root_task_group)
++		return 1;
++
+ 	/* Don't accept real-time tasks when there is no way for them to run */
+-	if (rt_task(tsk) && tg->dl_bandwidth.dl_runtime == 0)
++	if (tg->dl_bandwidth.dl_runtime == 0)
+ 		return 0;
+ 
+ 	/* If one of the children has runtime > 0, cannot attach RT tasks! */
+-	if ((tg != &root_task_group) && rt_task(tsk)) {
+-		struct task_group *child;
+-
+-		list_for_each_entry_rcu(child, &tg->children, siblings) {
+-			if (child->dl_bandwidth.dl_runtime) {
+-				can_attach = 0;
+-			}
++	list_for_each_entry_rcu(child, &tg->children, siblings) {
++		if (child->dl_bandwidth.dl_runtime) {
++			can_attach = 0;
+ 		}
+ 	}
+ 
+diff --git a/kernel/sched/syscalls.c b/kernel/sched/syscalls.c
+index 8d64dcd6d..795377082 100644
+--- a/kernel/sched/syscalls.c
++++ b/kernel/sched/syscalls.c
+@@ -640,16 +640,12 @@ int __sched_setscheduler(struct task_struct *p,
+ 
+ 	if (user) {
+ #ifdef CONFIG_RT_GROUP_SCHED
+-		if (dl_bandwidth_enabled() && rt_policy(policy) && !sched_rt_can_attach(task_group(p), p)) {
+-			retval = -EPERM;
+-			goto unlock;
+-		}
+ 		/*
+ 		 * Do not allow real-time tasks into groups that have no runtime
+ 		 * assigned.
+ 		 */
+ 		if (dl_bandwidth_enabled() && rt_policy(policy) &&
+-				task_group(p)->dl_bandwidth.dl_runtime == 0 &&
++				!sched_rt_can_attach(task_group(p), p) &&
+ 				!task_group_is_autogroup(task_group(p))) {
+ 			retval = -EPERM;
+ 			goto unlock;
+-- 
+2.49.0
+

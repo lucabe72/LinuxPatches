@@ -1,0 +1,230 @@
+From db90b3b8a504ed12780f4f283a0338f2a85a64f4 Mon Sep 17 00:00:00 2001
+From: luca abeni <luca.abeni@santannapisa.it>
+Date: Thu, 25 Jan 2018 12:22:21 +0100
+Subject: [PATCH 08/15] Allow deeper hierarchies of RT cgroups
+
+The basic rule is that:
+- if a cgroup contains RT tasks than it cannot have other cgroups
+  with RT tasks as children.
+- if a cgroup has children with RT tasks, then it cannot contain RT tasks
+
+This change also fixes and updates bandwidth accounting for nested
+cgroup hierarchies (otherwise, the bandwidth of non-leaf cgroups would
+be added to this_bw)
+---
+ kernel/sched/core.c     |  6 ----
+ kernel/sched/deadline.c | 69 ++++++++++++++++++++++++++++++++++-------
+ kernel/sched/rt.c       | 28 +++++++++++++++--
+ kernel/sched/sched.h    |  2 +-
+ kernel/sched/syscalls.c |  4 +++
+ 5 files changed, 87 insertions(+), 22 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index f9297e822..10ea266fc 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -9099,12 +9099,6 @@ cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
+ 		return &root_task_group.css;
+ 	}
+ 
+-	/* Do not allow cpu_cgroup hierachies with depth greater than 2. */
+-#ifdef CONFIG_RT_GROUP_SCHED
+-	if (parent != &root_task_group)
+-		return ERR_PTR(-EINVAL);
+-#endif
+-
+ 	tg = sched_create_group(parent);
+ 	if (IS_ERR(tg))
+ 		return ERR_PTR(-ENOMEM);
+diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
+index 60257d107..9584cc4aa 100644
+--- a/kernel/sched/deadline.c
++++ b/kernel/sched/deadline.c
+@@ -388,10 +388,39 @@ int dl_check_tg(unsigned long total)
+ 	return 1;
+ }
+ 
+-int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period)
++static inline bool is_active_sched_group(struct task_group *tg)
+ {
++	struct task_group *child;
++	bool is_active = 1;
++
++	// if there are no children, this is a leaf group, thus it is active
++	list_for_each_entry_rcu(child, &tg->children, siblings) {
++		if (child->dl_bandwidth.dl_runtime > 0) {
++			is_active = 0;
++		}
++	}
++	return is_active;
++}
++
++static inline bool sched_group_has_active_siblings(struct task_group *tg)
++{
++	struct task_group *child;
++	bool has_active_siblings = 0;
++
++	// if there are no children, this is a leaf group, thus it is active
++	list_for_each_entry_rcu(child, &tg->parent->children, siblings) {
++		if (child != tg && child->dl_bandwidth.dl_runtime > 0) {
++			has_active_siblings = 1;
++		}
++	}
++	return has_active_siblings;
++}
++
++int dl_init_tg(struct task_group *tg, int cpu, u64 rt_runtime, u64 rt_period)
++{
++	struct sched_dl_entity *dl_se = tg->dl_se[cpu];
+ 	struct rq *rq = container_of(dl_se->dl_rq, struct rq, dl);
+-	int is_active;
++	int is_active, is_active_group;
+ 	u64 old_runtime;
+ 
+ 	/*
+@@ -408,24 +437,40 @@ int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period)
+ 	if (rt_period & (1ULL << 63))
+ 		return 0;
+ 
++	is_active_group = is_active_sched_group(tg);
++
+ 	raw_spin_rq_lock_irq(rq);
+ 	is_active = dl_se->my_q->rt.rt_nr_running > 0;
+ 	old_runtime = dl_se->dl_runtime;
+ 	dl_se->dl_runtime  = rt_runtime;
+ 	dl_se->dl_period   = rt_period;
+ 	dl_se->dl_deadline = dl_se->dl_period;
+-	if (is_active) {
+-		sub_running_bw(dl_se, dl_se->dl_rq);
+-	} else if (dl_se->dl_non_contending) {
+-		sub_running_bw(dl_se, dl_se->dl_rq);
+-		dl_se->dl_non_contending = 0;
+-		hrtimer_try_to_cancel(&dl_se->inactive_timer);
++	if (is_active_group) {
++		if (is_active) {
++			sub_running_bw(dl_se, dl_se->dl_rq);
++		} else if (dl_se->dl_non_contending) {
++			sub_running_bw(dl_se, dl_se->dl_rq);
++			dl_se->dl_non_contending = 0;
++			hrtimer_try_to_cancel(&dl_se->inactive_timer);
++		}
++		__sub_rq_bw(dl_se->dl_bw, dl_se->dl_rq);
++		dl_se->dl_bw = to_ratio(dl_se->dl_period, dl_se->dl_runtime);
++		__add_rq_bw(dl_se->dl_bw, dl_se->dl_rq);
++	} else {
++		dl_se->dl_bw = to_ratio(dl_se->dl_period, dl_se->dl_runtime);
++	}
++
++	// add/remove the parent's bw
++	if (tg->parent && tg->parent != &root_task_group)
++	{
++		if (rt_runtime == 0 && old_runtime != 0 && !sched_group_has_active_siblings(tg)) {
++			__add_rq_bw(tg->parent->dl_se[cpu]->dl_bw, dl_se->dl_rq);
++		} else if (rt_runtime != 0 && old_runtime == 0 && !sched_group_has_active_siblings(tg)) {
++			__sub_rq_bw(tg->parent->dl_se[cpu]->dl_bw, dl_se->dl_rq);
++		}
+ 	}
+-	__sub_rq_bw(dl_se->dl_bw, dl_se->dl_rq);
+-	dl_se->dl_bw = to_ratio(dl_se->dl_period, dl_se->dl_runtime);
+-	__add_rq_bw(dl_se->dl_bw, dl_se->dl_rq);
+ 
+-	if (is_active)
++	if (is_active_group && is_active)
+ 		add_running_bw(dl_se, dl_se->dl_rq);
+ 
+ 	raw_spin_rq_unlock_irq(rq);
+diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
+index c2d40ea8b..1c68ff6c1 100644
+--- a/kernel/sched/rt.c
++++ b/kernel/sched/rt.c
+@@ -103,7 +103,8 @@ void free_rt_sched_group(struct task_group *tg)
+ 			 * Fix this issue by changing the group runtime
+ 			 * to 0 immediately before freeing it.
+ 			 */
+-			BUG_ON(!dl_init_tg(tg->dl_se[i], 0, tg->dl_se[i]->dl_period));
++			if (tg->dl_se[i]->dl_runtime)
++				BUG_ON(!dl_init_tg(tg, i, 0, tg->dl_se[i]->dl_period));
+ 			raw_spin_rq_lock_irqsave(cpu_rq(i), flags);
+ 			BUG_ON(tg->rt_rq[i]->rt_nr_running);
+ 			raw_spin_rq_unlock_irqrestore(cpu_rq(i), flags);
+@@ -2174,6 +2175,14 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
+ 	if (tg == &root_task_group && rt_runtime == 0)
+ 		return -EINVAL;
+ 
++	/*
++	 * Do not allow to set a RT runtime > 0 if the parent has RT tasks
++	 * (and is not the root group)
++	 */
++	if (rt_runtime && (tg != &root_task_group) && (tg->parent != &root_task_group) && tg_has_rt_tasks(tg->parent)) {
++		return -EINVAL;
++	}
++
+ 	/* No period doesn't make any sense. */
+ 	if (rt_period == 0)
+ 		return -EINVAL;
+@@ -2197,7 +2206,7 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
+ 		goto unlock_bandwidth;
+ 
+ 	for_each_possible_cpu(i) {
+-		if (!dl_init_tg(tg->dl_se[i], rt_runtime, rt_period)) {
++		if (!dl_init_tg(tg, i, rt_runtime, rt_period)) {
+ 			err = -EINVAL;
+ 			break;
+ 		}
+@@ -2267,11 +2276,24 @@ static int sched_rt_global_constraints(void)
+ 
+ int sched_rt_can_attach(struct task_group *tg, struct task_struct *tsk)
+ {
++	int can_attach = 1;
++
+ 	/* Don't accept real-time tasks when there is no way for them to run */
+ 	if (rt_task(tsk) && tg->dl_bandwidth.dl_runtime == 0)
+ 		return 0;
+ 
+-	return 1;
++	/* If one of the children has runtime > 0, cannot attach RT tasks! */
++	if ((tg != &root_task_group) && rt_task(tsk)) {
++		struct task_group *child;
++
++		list_for_each_entry_rcu(child, &tg->children, siblings) {
++			if (child->dl_bandwidth.dl_runtime) {
++				can_attach = 0;
++			}
++		}
++	}
++
++	return can_attach;
+ }
+ 
+ #else /* !CONFIG_RT_GROUP_SCHED */
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+index e96fca10f..a3d72caba 100644
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -390,7 +390,7 @@ extern void dl_server_init(struct sched_dl_entity *dl_se, struct dl_rq *dl_rq,
+ 		    dl_server_has_tasks_f has_tasks,
+ 		    dl_server_pick_f pick_task);
+ int dl_check_tg(unsigned long total);
+-int dl_init_tg(struct sched_dl_entity *dl_se, u64 rt_runtime, u64 rt_period);
++int dl_init_tg(struct task_group *tg, int cpu, u64 rt_runtime, u64 rt_period);
+ 
+ extern void dl_server_update_idle_time(struct rq *rq,
+ 		    struct task_struct *p);
+diff --git a/kernel/sched/syscalls.c b/kernel/sched/syscalls.c
+index a74704af1..8d64dcd6d 100644
+--- a/kernel/sched/syscalls.c
++++ b/kernel/sched/syscalls.c
+@@ -640,6 +640,10 @@ int __sched_setscheduler(struct task_struct *p,
+ 
+ 	if (user) {
+ #ifdef CONFIG_RT_GROUP_SCHED
++		if (dl_bandwidth_enabled() && rt_policy(policy) && !sched_rt_can_attach(task_group(p), p)) {
++			retval = -EPERM;
++			goto unlock;
++		}
+ 		/*
+ 		 * Do not allow real-time tasks into groups that have no runtime
+ 		 * assigned.
+-- 
+2.49.0
+

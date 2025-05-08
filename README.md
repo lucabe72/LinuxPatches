@@ -1,5 +1,3 @@
-# LinuxPatches
-Various patchsets (one per branch) for the linux kernel
-
-To get a patchset, checkout the corresponding branch; the repository
-will be populated with git patches that genreally apply on top of tip/master.
+# LinuxPatches: H-CBS on deadline server
+This is the H-CBS patchset, rewritten using the new dl_server infrastructure.
+The patchset applies on top of Linux 6.13-rc4

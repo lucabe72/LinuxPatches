@@ -1,0 +1,83 @@
+From 3ba1752ba35f8959dcff43bc06b2045eeab9df18 Mon Sep 17 00:00:00 2001
+From: Yuri Andriaccio <yurand2000@gmail.com>
+Date: Tue, 17 Dec 2024 16:29:45 +0100
+Subject: [PATCH 09/15] Execute enqueued balance callbacks when changing
+ allowed CPUs
+
+This is needed by the next patch
+(please add details!)
+---
+ kernel/sched/core.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 10ea266fc..799f51294 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -2918,6 +2918,7 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 	/* Can the task run on the task's current CPU? If so, we're done */
+ 	if (cpumask_test_cpu(task_cpu(p), &p->cpus_mask)) {
+ 		struct task_struct *push_task = NULL;
++		struct balance_callback *head;
+ 
+ 		if ((flags & SCA_MIGRATE_ENABLE) &&
+ 		    (p->migration_flags & MDF_PUSH) && !rq->push_busy) {
+@@ -2936,11 +2937,13 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 		}
+ 
+ 		preempt_disable();
++		head = splice_balance_callbacks(rq);
+ 		task_rq_unlock(rq, p, rf);
+ 		if (push_task) {
+ 			stop_one_cpu_nowait(rq->cpu, push_cpu_stop,
+ 					    p, &rq->push_work);
+ 		}
++		balance_callbacks(rq, head);
+ 		preempt_enable();
+ 
+ 		if (complete)
+@@ -2995,6 +2998,8 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 	}
+ 
+ 	if (task_on_cpu(rq, p) || READ_ONCE(p->__state) == TASK_WAKING) {
++		struct balance_callback *head;
++
+ 		/*
+ 		 * MIGRATE_ENABLE gets here because 'p == current', but for
+ 		 * anything else we cannot do is_migration_disabled(), punt
+@@ -3008,16 +3013,19 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 			p->migration_flags &= ~MDF_PUSH;
+ 
+ 		preempt_disable();
++		head = splice_balance_callbacks(rq);
+ 		task_rq_unlock(rq, p, rf);
+ 		if (!stop_pending) {
+ 			stop_one_cpu_nowait(cpu_of(rq), migration_cpu_stop,
+ 					    &pending->arg, &pending->stop_work);
+ 		}
++		balance_callbacks(rq, head);
+ 		preempt_enable();
+ 
+ 		if (flags & SCA_MIGRATE_ENABLE)
+ 			return 0;
+ 	} else {
++		struct balance_callback *head;
+ 
+ 		if (!is_migration_disabled(p)) {
+ 			if (task_on_rq_queued(p))
+@@ -3028,7 +3036,12 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 				complete = true;
+ 			}
+ 		}
++
++		preempt_disable();
++		head = splice_balance_callbacks(rq);
+ 		task_rq_unlock(rq, p, rf);
++		balance_callbacks(rq, head);
++		preempt_enable();
+ 
+ 		if (complete)
+ 			complete_all(&pending->done);
+-- 
+2.49.0
+
